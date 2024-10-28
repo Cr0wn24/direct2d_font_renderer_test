@@ -112,7 +112,7 @@ struct TextAnalysisSource final : IDWriteTextAnalysisSource
       return S_OK;
     }
 
-    *ppvObject = nullptr;
+    *ppvObject = 0;
     return E_NOINTERFACE;
   }
 
@@ -201,7 +201,7 @@ struct TextAnalysisSink final : IDWriteTextAnalysisSink
       return S_OK;
     }
 
-    *ppvObject = nullptr;
+    *ppvObject = 0;
     return E_NOINTERFACE;
   }
 
@@ -456,8 +456,8 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
                                                    0,
                                                    &analysis_result.analysis,
                                                    locale,
-                                                   nullptr,
-                                                   nullptr,
+                                                   0,
+                                                   0,
                                                    0,
                                                    glyph_array->advances,
                                                    glyph_array->offsets);
