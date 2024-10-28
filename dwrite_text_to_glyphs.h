@@ -124,6 +124,107 @@ private:
   const UINT32 _text_length;
 };
 
+struct TextAnalysisSinkResult
+{
+  uint32_t text_position;
+  uint32_t text_length;
+  DWRITE_SCRIPT_ANALYSIS analysis;
+};
+
+struct TextAnalysisSinkResultChunk
+{
+  TextAnalysisSinkResultChunk *next;
+  TextAnalysisSinkResultChunk *prev;
+  uint64_t count;
+  TextAnalysisSinkResult v[512];
+};
+
+// DirectWrite uses an IDWriteTextAnalysisSink to inform the caller of its segmentation results. The most important part are the
+// DWRITE_SCRIPT_ANALYSIS results which inform the remaining steps during glyph shaping what script ("language") is used in a piece of text.
+struct TextAnalysisSink final : IDWriteTextAnalysisSink
+{
+  TextAnalysisSinkResultChunk *first_result_chunk;
+  TextAnalysisSinkResultChunk *last_result_chunk;
+
+  ULONG STDMETHODCALLTYPE
+  AddRef() noexcept override
+  {
+    return 1;
+  }
+
+  ULONG STDMETHODCALLTYPE
+  Release() noexcept override
+  {
+    return 1;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  QueryInterface(const IID &riid, void **ppvObject) noexcept override
+  {
+    if(IsEqualGUID(riid, __uuidof(IDWriteTextAnalysisSink)))
+    {
+      *ppvObject = this;
+      return S_OK;
+    }
+
+    *ppvObject = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  SetScriptAnalysis(UINT32 textPosition, UINT32 textLength, const DWRITE_SCRIPT_ANALYSIS *scriptAnalysis) noexcept override
+  {
+    TextAnalysisSinkResultChunk *chunk = last_result_chunk;
+    if(chunk == 0 || chunk->count == ARRAYSIZE(chunk->v))
+    {
+      chunk = (TextAnalysisSinkResultChunk *)calloc(1, sizeof(TextAnalysisSinkResultChunk));
+      if(first_result_chunk == 0)
+      {
+        first_result_chunk = last_result_chunk = chunk;
+      }
+      else
+      {
+        last_result_chunk->next = chunk;
+        last_result_chunk = first_result_chunk;
+      }
+    }
+    TextAnalysisSinkResult &result = chunk->v[chunk->count];
+    result.text_position = textPosition;
+    result.text_length = textLength;
+    result.analysis = *scriptAnalysis;
+    chunk->count += 1;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  SetLineBreakpoints(UINT32 textPosition, UINT32 textLength, const DWRITE_LINE_BREAKPOINT *lineBreakpoints) noexcept override
+  {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  SetBidiLevel(UINT32 textPosition, UINT32 textLength, UINT8 explicitLevel, UINT8 resolvedLevel) noexcept override
+  {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  SetNumberSubstitution(UINT32 textPosition, UINT32 textLength, IDWriteNumberSubstitution *numberSubstitution) noexcept override
+  {
+    return E_NOTIMPL;
+  }
+
+  ~TextAnalysisSink()
+  {
+    TextAnalysisSinkResultChunk *next_chunk = 0;
+    for(TextAnalysisSinkResultChunk *chunk = first_result_chunk; chunk != 0; chunk = next_chunk)
+    {
+      next_chunk = chunk->next;
+      free(chunk);
+    }
+  }
+};
+
 static MapTextToGlyphsResult
 dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollection *font_collection, IDWriteTextAnalyzer1 *text_analyzer, const wchar_t *locale, const wchar_t *base_family, float font_size, const wchar_t *text, uint32_t text_length)
 {
@@ -136,8 +237,8 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     //----------------------------------------------------------
     // hampus: get mapped font and length
 
-    IDWriteFontFace5 *fallback_mapped_font_face = 0;
-    uint32_t fallback_mapped_length = 0;
+    IDWriteFontFace5 *fallback_font_face = 0;
+    uint32_t fallback_text_length = 0;
     {
       float scale = 0;
       TextAnalysisSource analysis_source{locale, text, text_length};
@@ -148,11 +249,11 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
                                         base_family,
                                         0,
                                         0,
-                                        &fallback_mapped_length,
+                                        &fallback_text_length,
                                         &scale,
-                                        &fallback_mapped_font_face);
+                                        &fallback_font_face);
       ASSERT_HR(hr);
-      if(fallback_mapped_font_face == 0)
+      if(fallback_font_face == 0)
       {
         // NOTE(hampus): This means that no font was available for this character.
         // TODO(hampus): Should be replaced by '?'
@@ -195,7 +296,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     GlyphArrayChunk *last_glyph_array_chunk = 0;
 
     const wchar_t *fallback_ptr = text + fallback_offset;
-    const wchar_t *fallback_opl = fallback_ptr + fallback_mapped_length;
+    const wchar_t *fallback_opl = fallback_ptr + fallback_text_length;
     while(fallback_ptr < fallback_opl)
     {
       uint32_t fallback_remaining = (uint32_t)(fallback_opl - fallback_ptr);
@@ -206,7 +307,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
       hr = text_analyzer->GetTextComplexity(fallback_ptr,
                                             fallback_remaining,
-                                            fallback_mapped_font_face,
+                                            fallback_font_face,
                                             &is_simple,
                                             &complex_mapped_length,
                                             glyph_indices);
@@ -238,32 +339,43 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
       if(is_simple)
       {
-        // NOTE(hampus): This glyph array was simple. This means we can just use 
-        // the indices directly without having to do any more shaping work. 
+        // NOTE(hampus): This text was simple. This means we can just use
+        // the indices directly without having to do any more shaping work.
+
+        // hampus: allocate arrays
 
         DWRITE_FONT_METRICS1 font_metrics = {};
-        fallback_mapped_font_face->GetMetrics(&font_metrics);
+        fallback_font_face->GetMetrics(&font_metrics);
         glyph_array->count = complex_mapped_length;
         glyph_array->advances = (float *)calloc(glyph_array->count, sizeof(float));
         glyph_array->offsets = (DWRITE_GLYPH_OFFSET *)calloc(glyph_array->count, sizeof(DWRITE_GLYPH_OFFSET));
         glyph_array->indices = (uint16_t *)calloc(glyph_array->count, sizeof(uint16_t));
+
+        // hampus: fill in indices
+
         memory_copy_typed(glyph_array->indices, glyph_indices, glyph_array->count);
 
-        int32_t *design_advances = (int32_t *)calloc(glyph_array->count, sizeof(int32_t));
-        hr = fallback_mapped_font_face->GetDesignGlyphAdvances(glyph_array->count, glyph_array->indices, design_advances);
-        float scale = font_size / (float)font_metrics.designUnitsPerEm;
-        for(uint64_t idx = 0; idx < glyph_array->count; idx++)
+        // hampus: fill in advances
+
         {
-          glyph_array->advances[idx] = (float)design_advances[idx] * scale;
+          int32_t *design_advances = (int32_t *)calloc(glyph_array->count, sizeof(int32_t));
+          hr = fallback_font_face->GetDesignGlyphAdvances(glyph_array->count, glyph_array->indices, design_advances);
+          float scale = font_size / (float)font_metrics.designUnitsPerEm;
+          for(uint64_t idx = 0; idx < glyph_array->count; idx++)
+          {
+            glyph_array->advances[idx] = (float)design_advances[idx] * scale;
+          }
+          free(design_advances);
         }
 
         glyph_array_chunk->glyph_count += glyph_array->count;
-
-        free(design_advances);
       }
       else
       {
-        // TODO(hampus): finish this
+        // NOTE(hampus): This text was not simple. We have to do extra work. :(
+
+        TextAnalysisSource analysis_source{locale, text, text_length};
+        TextAnalysisSink analysis_sink = {};
       }
 
       free(glyph_indices);
@@ -274,19 +386,18 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     //----------------------------------------------------------
     // hampus: convert our list of glyph arrays into one big array
 
-    uint64_t total_glyph_count = 0;
-    for(GlyphArrayChunk *chunk = first_glyph_array_chunk; chunk != 0; chunk = chunk->next)
     {
-      total_glyph_count += chunk->glyph_count;
-    }
+      uint64_t total_glyph_count = 0;
+      for(GlyphArrayChunk *chunk = first_glyph_array_chunk; chunk != 0; chunk = chunk->next)
+      {
+        total_glyph_count += chunk->glyph_count;
+      }
 
-    GlyphArray &segment_glyph_array = segment->glyph_array;
-    segment_glyph_array.count = total_glyph_count;
-    segment_glyph_array.indices = (uint16_t *)calloc(segment_glyph_array.count, sizeof(uint16_t));
-    segment_glyph_array.advances = (float *)calloc(segment_glyph_array.count, sizeof(float));
-    segment_glyph_array.offsets = (DWRITE_GLYPH_OFFSET *)calloc(segment_glyph_array.count, sizeof(DWRITE_GLYPH_OFFSET));
-
-    {
+      GlyphArray &segment_glyph_array = segment->glyph_array;
+      segment_glyph_array.count = total_glyph_count;
+      segment_glyph_array.indices = (uint16_t *)calloc(segment_glyph_array.count, sizeof(uint16_t));
+      segment_glyph_array.advances = (float *)calloc(segment_glyph_array.count, sizeof(float));
+      segment_glyph_array.offsets = (DWRITE_GLYPH_OFFSET *)calloc(segment_glyph_array.count, sizeof(DWRITE_GLYPH_OFFSET));
       uint64_t glyph_idx_offset = 0;
       GlyphArrayChunk *next_chunk = 0;
       for(GlyphArrayChunk *chunk = first_glyph_array_chunk; chunk != 0; chunk = next_chunk)
@@ -309,14 +420,14 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       }
     }
 
-    segment->dwrite_glyph_run.fontFace = fallback_mapped_font_face;
+    segment->dwrite_glyph_run.fontFace = fallback_font_face;
     segment->dwrite_glyph_run.fontEmSize = font_size;
     segment->dwrite_glyph_run.glyphCount = segment->glyph_array.count;
     segment->dwrite_glyph_run.glyphAdvances = segment->glyph_array.advances;
     segment->dwrite_glyph_run.glyphIndices = segment->glyph_array.indices;
     segment->dwrite_glyph_run.glyphOffsets = segment->glyph_array.offsets;
 
-    fallback_offset += fallback_mapped_length;
+    fallback_offset += fallback_text_length;
   }
 
   return result;
