@@ -56,32 +56,6 @@ struct MapTextToGlyphsResult
   TextToGlyphsSegment *last_segment;
 };
 
-static GlyphArray *
-allocate_and_push_back_glyph_array(GlyphArrayChunk **first_chunk, GlyphArrayChunk **last_chunk)
-{
-  GlyphArray *glyph_array = 0;
-  GlyphArrayChunk *glyph_array_chunk = *last_chunk;
-  {
-    if(glyph_array_chunk == 0 || glyph_array_chunk->glyph_array_count == ARRAYSIZE(glyph_array_chunk->v))
-    {
-      glyph_array_chunk = (GlyphArrayChunk *)calloc(1, sizeof(GlyphArrayChunk));
-      if(*first_chunk == 0)
-      {
-        *first_chunk = *last_chunk = glyph_array_chunk;
-      }
-      else
-      {
-        (*last_chunk)->next = glyph_array_chunk;
-        *last_chunk = glyph_array_chunk;
-      }
-    }
-    glyph_array = &glyph_array_chunk->v[glyph_array_chunk->glyph_array_count];
-    glyph_array_chunk->glyph_array_count += 1;
-  }
-  glyph_array->chunk = glyph_array_chunk;
-  return glyph_array;
-}
-
 struct TextAnalysisSource final : IDWriteTextAnalysisSource
 {
   TextAnalysisSource(const wchar_t *locale, const wchar_t *text, const UINT32 textLength) noexcept
@@ -259,6 +233,32 @@ struct TextAnalysisSink final : IDWriteTextAnalysisSink
   }
 };
 
+static GlyphArray *
+allocate_and_push_back_glyph_array(GlyphArrayChunk **first_chunk, GlyphArrayChunk **last_chunk)
+{
+  GlyphArray *glyph_array = 0;
+  GlyphArrayChunk *glyph_array_chunk = *last_chunk;
+  {
+    if(glyph_array_chunk == 0 || glyph_array_chunk->glyph_array_count == ARRAYSIZE(glyph_array_chunk->v))
+    {
+      glyph_array_chunk = (GlyphArrayChunk *)calloc(1, sizeof(GlyphArrayChunk));
+      if(*first_chunk == 0)
+      {
+        *first_chunk = *last_chunk = glyph_array_chunk;
+      }
+      else
+      {
+        (*last_chunk)->next = glyph_array_chunk;
+        *last_chunk = glyph_array_chunk;
+      }
+    }
+    glyph_array = &glyph_array_chunk->v[glyph_array_chunk->glyph_array_count];
+    glyph_array_chunk->glyph_array_count += 1;
+  }
+  glyph_array->chunk = glyph_array_chunk;
+  return glyph_array;
+}
+
 static MapTextToGlyphsResult
 dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollection *font_collection, IDWriteTextAnalyzer1 *text_analyzer, const wchar_t *locale, const wchar_t *base_family, float font_size, const wchar_t *text, uint32_t text_length)
 {
@@ -409,7 +409,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
             glyph_array->indices = (uint16_t *)calloc(estimated_glyph_count, sizeof(uint16_t));
             for(int retry = 0;;)
             {
-              hr = text_analyzer->GetGlyphs(text + analysis_result.text_position,
+              hr = text_analyzer->GetGlyphs(fallback_ptr + analysis_result.text_position,
                                             analysis_result.text_length,
                                             fallback_font_face,
                                             false,
@@ -443,7 +443,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
             glyph_array->advances = (float *)calloc(glyph_array->count, sizeof(float));
             glyph_array->offsets = (DWRITE_GLYPH_OFFSET *)calloc(glyph_array->count, sizeof(DWRITE_GLYPH_OFFSET));
 
-            hr = text_analyzer->GetGlyphPlacements(text + analysis_result.text_position,
+            hr = text_analyzer->GetGlyphPlacements(fallback_ptr + analysis_result.text_position,
                                                    cluster_map,
                                                    text_props,
                                                    analysis_result.text_length,
