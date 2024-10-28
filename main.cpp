@@ -16,6 +16,13 @@
 #pragma comment(lib, "d3dcompiler")
 #pragma comment(lib, "dwrite.lib")
 
+#ifndef min
+#  define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+#ifndef max
+#  define max(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 #define ASSERT(expr)        \
   if(!(expr))               \
   {                         \
@@ -23,6 +30,8 @@
   }
 
 #define ASSERT_HR(hr) ASSERT(SUCCEEDED(hr))
+
+#define array_count(arr) sizeof(arr) / sizeof(*(arr))
 
 struct Vec2F32
 {
@@ -82,6 +91,85 @@ ndc_space_from_pixels_space(Vec2F32 render_dim, Vec2F32 pos_px)
 ////////////////////////////////////////////////////////////
 // hampus: dwrite
 
+struct TextAnalysisSource final : IDWriteTextAnalysisSource
+{
+
+  TextAnalysisSource(const wchar_t *locale, const wchar_t *text, const UINT32 textLength) noexcept
+      : _locale{locale},
+        _text{text},
+        _text_length{textLength}
+  {
+  }
+
+  ULONG STDMETHODCALLTYPE
+  AddRef() noexcept override
+  {
+    return 1;
+  }
+
+  ULONG STDMETHODCALLTYPE
+  Release() noexcept override
+  {
+    return 1;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  QueryInterface(const IID &riid, void **ppvObject) noexcept override
+  {
+    if(IsEqualGUID(riid, __uuidof(IDWriteTextAnalysisSource)))
+    {
+      *ppvObject = this;
+      return S_OK;
+    }
+
+    *ppvObject = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetTextAtPosition(UINT32 textPosition, const WCHAR **textString, UINT32 *textLength) noexcept override
+  {
+    textPosition = min(textPosition, _text_length);
+    *textString = _text + textPosition;
+    *textLength = _text_length - textPosition;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetTextBeforePosition(UINT32 textPosition, const WCHAR **textString, UINT32 *textLength) noexcept override
+  {
+    textPosition = min(textPosition, _text_length);
+    *textString = _text;
+    *textLength = textPosition;
+    return S_OK;
+  }
+
+  DWRITE_READING_DIRECTION STDMETHODCALLTYPE
+  GetParagraphReadingDirection() noexcept override
+  {
+    return DWRITE_READING_DIRECTION_LEFT_TO_RIGHT;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetLocaleName(UINT32 textPosition, UINT32 *textLength, const WCHAR **localeName) noexcept override
+  {
+    *textLength = _text_length - textPosition;
+    *localeName = _locale;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetNumberSubstitution(UINT32 textPosition, UINT32 *textLength, IDWriteNumberSubstitution **numberSubstitution) noexcept override
+  {
+    return E_NOTIMPL;
+  }
+
+private:
+  const wchar_t *_locale;
+  const wchar_t *_text;
+  const UINT32 _text_length;
+};
+
 struct TextToGlyphsSegment
 {
   DWRITE_GLYPH_RUN glyph_run;
@@ -94,16 +182,88 @@ struct TextToGlyphsSegment
   DWRITE_GLYPH_OFFSET *glyph_offsets;
 };
 
+struct TextToGlyphsSegmentChunk
+{
+  TextToGlyphsSegmentChunk *next;
+  TextToGlyphsSegmentChunk *prev;
+  uint64_t count;
+  TextToGlyphsSegment v[32];
+};
+
 struct MapTextToGlyphsResult
 {
-  uint64_t segments_count;
-  TextToGlyphsSegment *segments;
+  TextToGlyphsSegmentChunk *first_segment_chunk;
+  TextToGlyphsSegmentChunk *last_segment_chunk;
 };
 
 static MapTextToGlyphsResult
 dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollection *font_collection, IDWriteTextAnalyzer1 *text_analyzer, const wchar_t *locale, const wchar_t *base_family, float font_size, const wchar_t *text, uint32_t text_length)
 {
   MapTextToGlyphsResult result = {};
+
+  for(uint32_t fallback_offset = 0; fallback_offset < text_length;)
+  {
+    //----------------------------------------------------------
+    // hampus: get mapped font and length
+
+    IDWriteFontFace5 *mapped_font_face = 0;
+    uint32_t mapped_length = 0;
+    {
+      float scale = 0;
+      TextAnalysisSource analysis_source{locale, text, text_length};
+      font_fallback->MapCharacters(&analysis_source,
+                                   fallback_offset,
+                                   text_length,
+                                   font_collection,
+                                   base_family,
+                                   0,
+                                   0,
+                                   &mapped_length,
+                                   &scale,
+                                   &mapped_font_face);
+      if(mapped_font_face == 0)
+      {
+        // NOTE(hampus): This means that no font was available for this character.
+        // TODO(hampus): Should be replaced by '?'
+        continue;
+      }
+    }
+
+    //----------------------------------------------------------
+    // hampus: get a segment
+
+    TextToGlyphsSegment *segment = 0;
+    {
+      TextToGlyphsSegmentChunk *chunk = result.last_segment_chunk;
+      if(chunk == 0 || chunk->count == array_count(chunk->v))
+      {
+        chunk = (TextToGlyphsSegmentChunk *)calloc(1, sizeof(TextToGlyphsSegmentChunk));
+        if(result.first_segment_chunk == 0)
+        {
+          result.first_segment_chunk = result.last_segment_chunk = chunk;
+        }
+        else
+        {
+          result.last_segment_chunk->next = chunk;
+          result.last_segment_chunk = chunk;
+        }
+      }
+      segment = &chunk->v[chunk->count];
+      chunk->count += 1;
+    }
+
+    const wchar_t *fallback_ptr = text + fallback_offset;
+    const wchar_t *fallback_opl = fallback_ptr + mapped_length;
+    while(fallback_ptr < fallback_opl)
+    {
+      uint64_t complex_mapped_lenght = 1;
+
+      fallback_ptr += complex_mapped_lenght;
+    }
+
+    fallback_offset += mapped_length;
+  }
+
   return result;
 }
 
@@ -512,6 +672,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     memcpy(&locale[0], L"en-US", sizeof(L"en-US"));
   }
 
+  MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 16.0f, L"Hello->world", wcslen(L"Hello->world"));
+
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
   ID3D11RenderTargetView *render_target_view = 0;
@@ -531,8 +693,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       TranslateMessage(&message);
       DispatchMessageW(&message);
     }
-
-    MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Segoe UI", 16.0f, L"Hello world", wcslen(L"Hello worold"));
 
     RECT rect = {};
     GetClientRect(hwnd, &rect);
