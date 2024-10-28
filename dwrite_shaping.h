@@ -318,7 +318,7 @@ static void dwrite_map_glyphs_complex(IDWriteTextAnalyzer1* text_analyzer, const
             run.glyph_advances.resize(size);
         }
 
-        / Step 3: Get the glyph advances and the offsets relative to their target position.
+        // Step 3: Get the glyph advances and the offsets relative to their target position.
         THROW_IF_FAILED(text_analyzer->GetGlyphPlacements(
             /* textString          */ text + analysis_result.text_position,
             /* clusterMap          */ cluster_map.data(),
@@ -338,7 +338,7 @@ static void dwrite_map_glyphs_complex(IDWriteTextAnalyzer1* text_analyzer, const
             /* featureRanges       */ 0,
             /* glyphAdvances       */ run.glyph_advances.data() + total_glyph_count,
             /* glyphOffsets        */ run.glyph_offsets.data() + total_glyph_count
-        ));/
+        ));
 
         total_glyph_count = actual_glyph_count_next;
     }

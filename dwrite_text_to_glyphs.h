@@ -423,15 +423,15 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
                                             estimated_glyph_count,
                                             cluster_map,
                                             text_props,
-                                            glyph_indices,
+                                            glyph_array->indices,
                                             glyph_props,
                                             &actual_glyph_count);
 
               if(hr == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER) && ++retry < 8)
               {
                 estimated_glyph_count *= 2;
-                glyph_indices = (uint16_t *)realloc(glyph_indices, estimated_glyph_count * sizeof(uint16_t));
-                glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)realloc(glyph_indices, estimated_glyph_count * sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
+                glyph_array->indices = (uint16_t *)realloc(glyph_array->indices, estimated_glyph_count * sizeof(uint16_t));
+                glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)realloc(glyph_array->indices, estimated_glyph_count * sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
                 continue;
               }
 
