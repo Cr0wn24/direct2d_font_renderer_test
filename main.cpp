@@ -5,12 +5,16 @@
 #include <dxgi1_3.h>
 #include <d3dcompiler.h>
 #include <dxgidebug.h>
+#include <dwrite_3.h>
 #pragma warning(pop)
+
+#include <stdint.h>
 
 #pragma comment(lib, "dxguid")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "d3dcompiler")
+#pragma comment(lib, "dwrite.lib")
 
 #define ASSERT(expr)        \
   if(!(expr))               \
@@ -44,7 +48,7 @@ struct Vertex
 static bool g_running;
 
 ////////////////////////////////////////////////////////////
-// hampus: helpers
+// hampus: basic helpers
 
 static Vec2F32
 v2f32(float x, float y)
@@ -72,6 +76,34 @@ ndc_space_from_pixels_space(Vec2F32 render_dim, Vec2F32 pos_px)
   Vec2F32 result = {};
   result.x = pos_px.x / render_dim.x * 2 - 1;
   result.y = (render_dim.y - pos_px.y) / render_dim.y * 2 - 1;
+  return result;
+}
+
+////////////////////////////////////////////////////////////
+// hampus: dwrite
+
+struct TextToGlyphsSegment
+{
+  DWRITE_GLYPH_RUN glyph_run;
+
+  IDWriteFontFace5 *font_face;
+
+  uint64_t glyph_count;
+  uint16_t *glyph_indices;
+  float *glyph_advances;
+  DWRITE_GLYPH_OFFSET *glyph_offsets;
+};
+
+struct MapTextToGlyphsResult
+{
+  uint64_t segments_count;
+  TextToGlyphsSegment *segments;
+};
+
+static MapTextToGlyphsResult
+dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollection *font_collection, IDWriteTextAnalyzer1 *text_analyzer, const wchar_t *locale, const wchar_t *base_family, float font_size, const wchar_t *text, uint32_t text_length)
+{
+  MapTextToGlyphsResult result = {};
   return result;
 }
 
@@ -226,12 +258,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create vertex buffer
+  // hampus: create d3d11 vertex buffer
 
-  unsigned int texture_atlas_width = 512;
-  unsigned int texture_atlas_height = 512;
-  unsigned int texture_atlas_pitch = texture_atlas_width * sizeof(unsigned int);
-  unsigned char *texture_atlas_data = (unsigned char *)calloc(texture_atlas_height * texture_atlas_height * 4, 1);
+  uint32_t texture_atlas_width = 512;
+  uint32_t texture_atlas_height = 512;
+  uint32_t texture_atlas_pitch = texture_atlas_width * sizeof(uint32_t);
+  uint8_t *texture_atlas_data = (uint8_t *)calloc(texture_atlas_height * texture_atlas_height * 4, 1);
 
   ID3D11Buffer *vertex_buffer = 0;
   {
@@ -247,7 +279,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create vertex and pixel shader
+  // hampus: create d3d11 vertex and pixel shader
 
   ID3D11InputLayout *layout = 0;
   ID3D11VertexShader *vertex_shader = 0;
@@ -334,7 +366,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create texture atlas
+  // hampus: create d3d11 texture atlas
 
   ID3D11ShaderResourceView *texture_view = 0;
   ID3D11Texture2D *texture = 0;
@@ -363,7 +395,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create sampler state
+  // hampus: create d3d11 sampler state
 
   ID3D11SamplerState *sampler = 0;
   {
@@ -383,9 +415,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create blend state
+  // hampus: create d3d11 blend state
 
-  ID3D11BlendState *blend_state;
+  ID3D11BlendState *blend_state = 0;
   {
     D3D11_BLEND_DESC desc = {};
     desc.RenderTarget[0] =
@@ -403,9 +435,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create rasterizer state
+  // hampus: create d3d11 rasterizer state
 
-  ID3D11RasterizerState *rasterizer_state;
+  ID3D11RasterizerState *rasterizer_state = 0;
   {
     D3D11_RASTERIZER_DESC desc =
     {
@@ -417,9 +449,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   }
 
   //----------------------------------------------------------
-  // hampus: create depth state
+  // hampus: create d3d11 depth state
 
-  ID3D11DepthStencilState *depth_state;
+  ID3D11DepthStencilState *depth_state = 0;
   {
     D3D11_DEPTH_STENCIL_DESC desc =
     {
@@ -431,6 +463,53 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       .StencilWriteMask = D3D11_DEFAULT_STENCIL_WRITE_MASK,
     };
     device->CreateDepthStencilState(&desc, &depth_state);
+  }
+
+  //----------------------------------------------------------
+  // hampus: create dwrite factory
+
+  IDWriteFactory2 *dwrite_factory = 0;
+  hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+                           __uuidof(IDWriteFactory2),
+                           (IUnknown **)&dwrite_factory);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: create dwrite font fallback
+
+  IDWriteFontFallback *font_fallback = 0;
+  hr = dwrite_factory->GetSystemFontFallback(&font_fallback);
+  ASSERT_HR(hr);
+
+  IDWriteFontFallback1 *font_fallback1 = 0;
+  hr = font_fallback->QueryInterface(__uuidof(IDWriteFontFallback1), (void **)&font_fallback1);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: create dwrite font collection
+
+  IDWriteFontCollection *font_collection = 0;
+  hr = dwrite_factory->GetSystemFontCollection(&font_collection);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: create dwrite text analyzer
+
+  IDWriteTextAnalyzer *text_analyzer = 0;
+  hr = dwrite_factory->CreateTextAnalyzer(&text_analyzer);
+  ASSERT_HR(hr);
+
+  IDWriteTextAnalyzer1 *text_analyzer1 = 0;
+  hr = text_analyzer->QueryInterface(__uuidof(IDWriteTextAnalyzer1), (void **)&text_analyzer1);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: get user default locale name
+
+  wchar_t locale[LOCALE_NAME_MAX_LENGTH] = {};
+  if(!GetUserDefaultLocaleName(&locale[0], LOCALE_NAME_MAX_LENGTH))
+  {
+    memcpy(&locale[0], L"en-US", sizeof(L"en-US"));
   }
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
@@ -452,6 +531,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       TranslateMessage(&message);
       DispatchMessageW(&message);
     }
+
+    MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Segoe UI", 16.0f, L"Hello world", wcslen(L"Hello worold"));
 
     RECT rect = {};
     GetClientRect(hwnd, &rect);
@@ -479,7 +560,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     context->Map((ID3D11Resource *)vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    memcpy((unsigned char *)mapped.pData, (unsigned char *)vertices, sizeof(vertices));
+    memcpy((uint8_t *)mapped.pData, (uint8_t *)vertices, sizeof(vertices));
     context->Unmap((ID3D11Resource *)vertex_buffer, 0);
 
     // hampus: resize render target view if size changed
