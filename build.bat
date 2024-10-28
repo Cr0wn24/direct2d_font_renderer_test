@@ -3,6 +3,6 @@
 if not exist build mkdir build
 pushd build
 
-cl -nologo -Od -Zi ../main.cpp
+clang -g -O0 -Wall ../main.cpp -o main.exe -luser32.lib
 
 popd
