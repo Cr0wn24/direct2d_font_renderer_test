@@ -59,7 +59,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     memcpy(&locale[0], L"en-US", sizeof(L"en-US"));
   }
 
-  MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Segoe UI", 16.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 16.0f, L"Hello->world", wcslen(L"Hello->world"));
 
   return 0;
 }
