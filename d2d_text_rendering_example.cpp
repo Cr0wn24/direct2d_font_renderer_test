@@ -215,6 +215,10 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: create rendering params
 
+  // NOTE(hampus): Since multiple monitors may have different rendering settings,
+  // this has to be reset if the monitor where to change. We can look for the
+  // WM_WINDOWPOSCHANGED message and check if we actually have changed monitor.
+
   IDWriteRenderingParams *base_rendering_params = 0;
   IDWriteRenderingParams *rendering_params = 0;
 
