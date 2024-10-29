@@ -299,7 +299,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       }
     }
 
-    // NOTE(hampus): This is a way the get the font face name of the
+    // NOTE(hampus): This is a way to get the font face name of the
     // fallback font if you want that.
     {
       IDWriteLocalizedStrings *localized_strings = 0;
