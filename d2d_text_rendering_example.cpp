@@ -2,73 +2,18 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi1_3.h>
-#include <d3dcompiler.h>
 #include <dxgidebug.h>
 #include <d2d1.h>
 
 #pragma comment(lib, "dxguid")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "d3d11")
-#pragma comment(lib, "d3dcompiler")
 #pragma comment(lib, "dwrite.lib")
 #pragma comment(lib, "d2d1.lib")
 
 #include "dwrite_text_to_glyphs.h"
 
-struct Vec2F32
-{
-  float x;
-  float y;
-};
-
-struct Vec4F32
-{
-  float r;
-  float g;
-  float b;
-  float a;
-};
-
-struct Vertex
-{
-  Vec2F32 position;
-  Vec2F32 uv;
-  Vec4F32 color;
-};
-
 static bool g_running;
-
-////////////////////////////////////////////////////////////
-// hampus: basic helpers
-
-static Vec2F32
-v2f32(float x, float y)
-{
-  Vec2F32 result = {};
-  result.x = x;
-  result.y = y;
-  return result;
-}
-
-static Vec4F32
-v4f32(float r, float g, float b, float a)
-{
-  Vec4F32 result = {};
-  result.r = r;
-  result.g = g;
-  result.b = g;
-  result.a = a;
-  return result;
-}
-
-static Vec2F32
-ndc_space_from_pixels_space(Vec2F32 render_dim, Vec2F32 pos_px)
-{
-  Vec2F32 result = {};
-  result.x = pos_px.x / render_dim.x * 2 - 1;
-  result.y = (render_dim.y - pos_px.y) / render_dim.y * 2 - 1;
-  return result;
-}
 
 ////////////////////////////////////////////////////////////
 // hampus: window proc callback
@@ -204,7 +149,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     ASSERT_HR(hr);
     DXGI_SWAP_CHAIN_DESC1 desc = {};
     {
-      desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+      desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
       desc.Stereo = FALSE;
       desc.SampleDesc.Count = 1;
       desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -222,214 +167,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     factory->Release();
     dxgi_adapter->Release();
     dxgi_device->Release();
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 vertex buffer
-
-  uint32_t texture_atlas_width = 512;
-  uint32_t texture_atlas_height = 512;
-  uint32_t texture_atlas_pitch = texture_atlas_width * sizeof(uint32_t);
-  uint8_t *texture_atlas_data = (uint8_t *)calloc(texture_atlas_height * texture_atlas_height * 4, 1);
-
-  ID3D11Buffer *vertex_buffer = 0;
-  {
-    D3D11_BUFFER_DESC desc =
-    {
-      .ByteWidth = sizeof(Vertex) * 4,
-      .Usage = D3D11_USAGE_DYNAMIC,
-      .BindFlags = D3D11_BIND_VERTEX_BUFFER,
-      .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
-    };
-
-    device->CreateBuffer(&desc, 0, &vertex_buffer);
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 vertex and pixel shader
-
-  ID3D11InputLayout *layout = 0;
-  ID3D11VertexShader *vertex_shader = 0;
-  ID3D11PixelShader *pixel_shader = 0;
-  {
-    D3D11_INPUT_ELEMENT_DESC desc[] =
-    {
-      {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(struct Vertex, position), D3D11_INPUT_PER_VERTEX_DATA, 0},
-      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(struct Vertex, uv), D3D11_INPUT_PER_VERTEX_DATA, 0},
-      {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, offsetof(struct Vertex, color), D3D11_INPUT_PER_VERTEX_DATA, 0},
-    };
-
-    char hlsl[] =
-    R"FOO(
-    
-      struct VS_INPUT                                            
-      {                                                          
-        float2 pos   : POSITION;             
-        float2 uv    : TEXCOORD;                              
-        float4 color : COLOR;                                 
-      };                                                         
-                                                                
-      struct PS_INPUT                                            
-      {                                                          
-        float4 pos   : SV_POSITION;             
-        float2 uv    : TEXCOORD;                                 
-        float4 color : COLOR;                                    
-      };                                                         
-                                                                
-      sampler sampler0 : register(s0);          
-                                                                
-      Texture2D<float4> texture0 : register(t0);
-                                                                
-      PS_INPUT vs(VS_INPUT input)                                
-      {                                                          
-        PS_INPUT output;                                       
-        output.pos = float4(input.pos, 0, 1);
-        output.uv = input.uv;                                  
-        output.color = input.color;
-        return output;                                         
-      }                                                          
-                                                                
-      float4 ps(PS_INPUT input) : SV_TARGET                      
-      {                                                          
-        float4 tex = texture0.Sample(sampler0, input.uv);      
-        return input.color * tex;                              
-      }
-
-    )FOO";
-
-    UINT flags = D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS;
-#ifndef NDEBUG
-    flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#else
-    flags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
-#endif
-
-    ID3DBlob *error = 0;
-
-    ID3DBlob *vblob = 0;
-    hr = D3DCompile(hlsl, sizeof(hlsl), 0, 0, 0, "vs", "vs_5_0", flags, 0, &vblob, &error);
-    if(FAILED(hr))
-    {
-      const char *message = (const char *)error->GetBufferPointer();
-      OutputDebugStringA(message);
-      ASSERT(!"Failed to compile vertex shader!");
-    }
-
-    ID3DBlob *pblob = 0;
-    hr = D3DCompile(hlsl, sizeof(hlsl), 0, 0, 0, "ps", "ps_5_0", flags, 0, &pblob, &error);
-    if(FAILED(hr))
-    {
-      const char *message = (const char *)error->GetBufferPointer();
-      OutputDebugStringA(message);
-      ASSERT(!"Failed to compile pixel shader!");
-    }
-
-    device->CreateVertexShader(vblob->GetBufferPointer(), vblob->GetBufferSize(), 0, &vertex_shader);
-    device->CreatePixelShader(pblob->GetBufferPointer(), pblob->GetBufferSize(), 0, &pixel_shader);
-    device->CreateInputLayout(desc, ARRAYSIZE(desc), vblob->GetBufferPointer(), vblob->GetBufferSize(), &layout);
-
-    pblob->Release();
-    vblob->Release();
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 texture atlas
-
-  ID3D11ShaderResourceView *texture_view = 0;
-  ID3D11Texture2D *texture = 0;
-  {
-    D3D11_TEXTURE2D_DESC desc =
-    {
-      .Width = texture_atlas_width,
-      .Height = texture_atlas_height,
-      .MipLevels = 1,
-      .ArraySize = 1,
-      .Format = DXGI_FORMAT_B8G8R8A8_UNORM,
-      .SampleDesc = {1, 0},
-      .Usage = D3D11_USAGE_DEFAULT,
-      .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
-      .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
-    };
-
-    D3D11_SUBRESOURCE_DATA data =
-    {
-      .pSysMem = texture_atlas_data,
-      .SysMemPitch = (UINT)(texture_atlas_pitch),
-    };
-
-    device->CreateTexture2D(&desc, &data, &texture);
-    device->CreateShaderResourceView((ID3D11Resource *)texture, 0, &texture_view);
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 sampler state
-
-  ID3D11SamplerState *sampler = 0;
-  {
-    D3D11_SAMPLER_DESC desc =
-    {
-      .Filter = D3D11_FILTER_MIN_MAG_MIP_POINT,
-      .AddressU = D3D11_TEXTURE_ADDRESS_WRAP,
-      .AddressV = D3D11_TEXTURE_ADDRESS_WRAP,
-      .AddressW = D3D11_TEXTURE_ADDRESS_WRAP,
-      .MipLODBias = 0,
-      .MaxAnisotropy = 1,
-      .MinLOD = 0,
-      .MaxLOD = D3D11_FLOAT32_MAX,
-    };
-
-    device->CreateSamplerState(&desc, &sampler);
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 blend state
-
-  ID3D11BlendState *blend_state = 0;
-  {
-    D3D11_BLEND_DESC desc = {};
-    desc.RenderTarget[0] =
-    {
-      .BlendEnable = FALSE,
-      .SrcBlend = D3D11_BLEND_SRC_ALPHA,
-      .DestBlend = D3D11_BLEND_INV_SRC_ALPHA,
-      .BlendOp = D3D11_BLEND_OP_ADD,
-      .SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA,
-      .DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA,
-      .BlendOpAlpha = D3D11_BLEND_OP_ADD,
-      .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL,
-    };
-    device->CreateBlendState(&desc, &blend_state);
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 rasterizer state
-
-  ID3D11RasterizerState *rasterizer_state = 0;
-  {
-    D3D11_RASTERIZER_DESC desc =
-    {
-      .FillMode = D3D11_FILL_SOLID,
-      .CullMode = D3D11_CULL_NONE,
-      .DepthClipEnable = TRUE,
-    };
-    device->CreateRasterizerState(&desc, &rasterizer_state);
-  }
-
-  //----------------------------------------------------------
-  // hampus: create d3d11 depth state
-
-  ID3D11DepthStencilState *depth_state = 0;
-  {
-    D3D11_DEPTH_STENCIL_DESC desc =
-    {
-      .DepthEnable = FALSE,
-      .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL,
-      .DepthFunc = D3D11_COMPARISON_LESS,
-      .StencilEnable = FALSE,
-      .StencilReadMask = D3D11_DEFAULT_STENCIL_READ_MASK,
-      .StencilWriteMask = D3D11_DEFAULT_STENCIL_WRITE_MASK,
-    };
-    device->CreateDepthStencilState(&desc, &depth_state);
   }
 
   //----------------------------------------------------------
@@ -483,7 +220,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   // hampus: create d2d factory
 
   ID2D1Factory *d2d_factory = 0;
-  hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2d_factory);
+  D2D1_FACTORY_OPTIONS options = {};
+  options.debugLevel = D2D1_DEBUG_LEVEL_WARNING;
+  hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d_factory);
   ASSERT_HR(hr);
 
   //----------------------------------------------------------
@@ -495,7 +234,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   hr = dwrite_factory->CreateRenderingParams(&base_rendering_params);
   ASSERT_HR(hr);
 
-  FLOAT gamma = 1.0f;
+  FLOAT gamma = base_rendering_params->GetGamma();
   FLOAT enhanced_contrast = base_rendering_params->GetEnhancedContrast();
   FLOAT clear_type_level = base_rendering_params->GetClearTypeLevel();
   hr = dwrite_factory->CreateCustomRenderingParams(gamma,
@@ -507,45 +246,27 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   ASSERT_HR(hr);
 
   //----------------------------------------------------------
-  // hampus: create d2d render target
-
-  D2D1_RENDER_TARGET_PROPERTIES props =
-  {
-    .type = D2D1_RENDER_TARGET_TYPE_DEFAULT,
-    .pixelFormat = {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED},
-    .dpiX = 90,
-    .dpiY = 90,
-  };
-
-  IDXGISurface *surface = {};
-  hr = texture->QueryInterface(__uuidof(IDXGISurface), (void **)&surface);
-  ASSERT_HR(hr);
-
-  ID2D1RenderTarget *d2d_render_target = 0;
-  hr = d2d_factory->CreateDxgiSurfaceRenderTarget(surface, &props, &d2d_render_target);
-  ASSERT_HR(hr);
-
-  d2d_render_target->SetTextRenderingParams(rendering_params);
-
-  //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 16.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 12.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 14.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 20.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result26 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 26.0f, L"Hello->world", wcslen(L"Hello->world"));
 
-  //----------------------------------------------------------
-  // hampus: draw
-
-  D2D1_COLOR_F foreground_color = {1, 1, 1, 1};
-
-  ID2D1SolidColorBrush *foreground_brush = 0;
-  hr = d2d_render_target->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
-  ASSERT_HR(hr);
-  d2d_render_target->BeginDraw();
-  d2d_render_target->DrawGlyphRun({100, 100}, &map_text_to_glyphs_result.first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
-  d2d_render_target->EndDraw();
+  MapTextToGlyphsResult map_text_to_glyphs_results[] =
+  {
+    map_text_to_glyphs_result8,
+    map_text_to_glyphs_result12,
+    map_text_to_glyphs_result14,
+    map_text_to_glyphs_result20,
+    map_text_to_glyphs_result26,
+  };
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
+  ID2D1SolidColorBrush *foreground_brush = 0;
+  ID2D1RenderTarget *d2d_render_target = 0;
   ID3D11RenderTargetView *render_target_view = 0;
   ID3D11DepthStencilView *depth_stencil_view = 0;
 
@@ -568,30 +289,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     GetClientRect(hwnd, &rect);
     int width = rect.right - rect.left;
     int height = rect.bottom - rect.top;
-
-    Vec2F32 render_dim = v2f32((float)width, (float)height);
-
-    Vertex vertices[4] = {};
-    vertices[0].position = ndc_space_from_pixels_space(render_dim, v2f32(0, 0));
-    vertices[0].uv = v2f32(0, 0);
-    vertices[0].color = v4f32(1, 1, 1, 1);
-
-    vertices[1].position = ndc_space_from_pixels_space(render_dim, v2f32((float)texture_atlas_width, 0));
-    vertices[1].uv = v2f32(1, 0);
-    vertices[1].color = v4f32(1, 1, 1, 1);
-
-    vertices[2].position = ndc_space_from_pixels_space(render_dim, v2f32(0, (float)texture_atlas_height));
-    vertices[2].uv = v2f32(0, 1);
-    vertices[2].color = v4f32(1, 1, 1, 1);
-
-    vertices[3].position = ndc_space_from_pixels_space(render_dim, v2f32((float)texture_atlas_width, (float)texture_atlas_height));
-    vertices[3].uv = v2f32(1, 1);
-    vertices[3].color = v4f32(1, 1, 1, 1);
-
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    context->Map((ID3D11Resource *)vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-    memcpy((uint8_t *)mapped.pData, (uint8_t *)vertices, sizeof(vertices));
-    context->Unmap((ID3D11Resource *)vertex_buffer, 0);
 
     // hampus: resize render target view if size changed
 
@@ -636,6 +333,41 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
         depth->Release();
       }
 
+      //----------------------------------------------------------
+      // hampus: recreate d2d render target
+
+      if(d2d_render_target != 0)
+      {
+        d2d_render_target->Release();
+        foreground_brush->Release();
+      }
+
+      D2D1_RENDER_TARGET_PROPERTIES props =
+      {
+        .type = D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        .pixelFormat = {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE},
+      };
+
+      ID3D11Texture2D *backbuffer = 0;
+      swap_chain->GetBuffer(0, IID_ID3D11Texture2D, (void **)&backbuffer);
+
+      IDXGISurface *surface = {};
+      hr = backbuffer->QueryInterface(__uuidof(IDXGISurface), (void **)&surface);
+      ASSERT_HR(hr);
+
+      hr = d2d_factory->CreateDxgiSurfaceRenderTarget(surface, &props, &d2d_render_target);
+      ASSERT_HR(hr);
+
+      d2d_render_target->SetTextRenderingParams(rendering_params);
+
+      D2D1_COLOR_F foreground_color = {1, 1, 1, 1};
+
+      hr = d2d_render_target->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
+      ASSERT_HR(hr);
+
+      backbuffer->Release();
+      surface->Release();
+
       current_width = width;
       current_height = height;
     }
@@ -654,44 +386,16 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
         .MaxDepth = 1,
       };
 
-      // hampus: clear screen
+      //----------------------------------------------------------
+      // hampus: draw
 
-      FLOAT color[] = {0.392f, 0.584f, 0.929f, 1.f};
-      context->ClearRenderTargetView(render_target_view, color);
-      context->ClearDepthStencilView(depth_stencil_view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.f, 0);
-
-      // hampus: input assembler
-
-      context->IASetInputLayout(layout);
-      context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-      UINT stride = sizeof(Vertex);
-      UINT offset = 0;
-      context->IASetVertexBuffers(0, 1, &vertex_buffer, &stride, &offset);
-
-      // hampus: vertex shader
-
-      context->VSSetShader(vertex_shader, 0, 0);
-
-      // hampus: rasterizer
-
-      context->RSSetViewports(1, &viewport);
-      context->RSSetState(rasterizer_state);
-
-      // hampus: pixel shader
-
-      context->PSSetSamplers(0, 1, &sampler);
-      context->PSSetShaderResources(0, 1, &texture_view);
-      context->PSSetShader(pixel_shader, 0, 0);
-
-      // hampus: output merger
-
-      context->OMSetBlendState(blend_state, 0, ~0U);
-      context->OMSetDepthStencilState(depth_state, 0);
-      context->OMSetRenderTargets(1, &render_target_view, depth_stencil_view);
-
-      // hampus: draw 4 vertices
-
-      context->Draw(4, 0);
+      d2d_render_target->BeginDraw();
+      d2d_render_target->Clear();
+      for(int i = 0; i < ARRAYSIZE(map_text_to_glyphs_results); ++i)
+      {
+        d2d_render_target->DrawGlyphRun({100, 100 + (float)i * 30}, &map_text_to_glyphs_results[i].first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+      }
+      d2d_render_target->EndDraw();
     }
 
     // hampus: present
@@ -710,6 +414,10 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       ASSERT("Failed to present swap chain! Device lost?");
     }
   }
+
+  d2d_render_target->Release();
+  foreground_brush->Release();
+  d2d_factory->Release();
 
   return 0;
 }
