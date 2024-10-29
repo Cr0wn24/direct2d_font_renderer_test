@@ -238,12 +238,13 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
   const wchar_t *text = L"مرحبا بالعالم";
   uint32_t text_length = wcslen(text);
+  const wchar_t *font = L"Segoe UI";
 
-  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 12.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 14.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 20.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result26 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 26.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 8.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 12.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 14.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 20.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result26 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 26.0f, text, text_length);
 
   MapTextToGlyphsResult map_text_to_glyphs_results[] =
   {
@@ -386,8 +387,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
         for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
         {
           D2D1_RECT_F bounds = {};
-          d2d_deivce_context->GetGlyphRunWorldBounds({0, 0}, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &bounds);
           d2d_render_target->DrawGlyphRun({100 + advance, 100 + (float)i * 30}, &segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+          d2d_deivce_context->GetGlyphRunWorldBounds({0, 0}, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &bounds);
 
           advance += bounds.right - bounds.left;
         }
