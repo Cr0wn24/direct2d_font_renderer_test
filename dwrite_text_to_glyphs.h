@@ -330,7 +330,8 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     {
       uint32_t fallback_remaining = (uint32_t)(fallback_opl - fallback_ptr);
 
-      uint16_t *glyph_indices = (uint16_t *)calloc(fallback_remaining, sizeof(uint16_t));
+      uint64_t max_glyph_indices_count = (3 * fallback_text_length) / 2 + 16;
+      uint16_t *glyph_indices = (uint16_t *)calloc(max_glyph_indices_count, sizeof(uint16_t));
       BOOL is_simple = FALSE;
       uint32_t complex_mapped_length = 0;
 
@@ -386,27 +387,24 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
         TextAnalysisSource analysis_source{locale, fallback_ptr, complex_mapped_length};
         TextAnalysisSink analysis_sink = {};
 
-        uint64_t estimated_final_glyph_count = (3 * complex_mapped_length) / 2 + 16;
-
         hr = text_analyzer->AnalyzeScript(&analysis_source, 0, complex_mapped_length, &analysis_sink);
         ASSERT_HR(hr);
+
+        DWRITE_SHAPING_GLYPH_PROPERTIES *glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)calloc(max_glyph_indices_count, sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
 
         for(TextAnalysisSinkResultChunk *chunk = analysis_sink.first_result_chunk; chunk != 0; chunk = chunk->next)
         {
           for(uint64_t text_analysis_sink_result_idx = 0; text_analysis_sink_result_idx < chunk->count; ++text_analysis_sink_result_idx)
           {
             TextAnalysisSinkResult &analysis_result = chunk->v[text_analysis_sink_result_idx];
-            uint64_t estimated_glyph_count = (3 * analysis_result.text_length) / 2 + 16;
-
             uint16_t *cluster_map = (uint16_t *)calloc(analysis_result.text_length, sizeof(uint16_t));
             DWRITE_SHAPING_TEXT_PROPERTIES *text_props = (DWRITE_SHAPING_TEXT_PROPERTIES *)calloc(analysis_result.text_length, sizeof(DWRITE_SHAPING_TEXT_PROPERTIES));
-            DWRITE_SHAPING_GLYPH_PROPERTIES *glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)calloc(estimated_glyph_count, sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
 
             uint32_t actual_glyph_count = 0;
 
             GlyphArray *glyph_array = allocate_and_push_back_glyph_array(&first_glyph_array_chunk, &last_glyph_array_chunk);
 
-            glyph_array->indices = (uint16_t *)calloc(estimated_glyph_count, sizeof(uint16_t));
+            glyph_array->indices = (uint16_t *)calloc(max_glyph_indices_count, sizeof(uint16_t));
             for(int retry = 0;;)
             {
               hr = text_analyzer->GetGlyphs(fallback_ptr + analysis_result.text_position,
@@ -420,19 +418,16 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
                                             0,
                                             0,
                                             0,
-                                            estimated_glyph_count,
+                                            max_glyph_indices_count,
                                             cluster_map,
                                             text_props,
-                                            glyph_array->indices,
+                                            glyph_indices,
                                             glyph_props,
                                             &actual_glyph_count);
 
               if(hr == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER) && ++retry < 8)
               {
-                estimated_glyph_count *= 2;
-                glyph_array->indices = (uint16_t *)realloc(glyph_array->indices, estimated_glyph_count * sizeof(uint16_t));
-                glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)realloc(glyph_array->indices, estimated_glyph_count * sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
-                continue;
+                ASSERT(!"Should never happen?");
               }
 
               ASSERT_HR(hr);
@@ -440,8 +435,11 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
             }
 
             glyph_array->count = actual_glyph_count;
+            glyph_array->indices = (uint16_t *)calloc(glyph_array->count, sizeof(uint16_t));
             glyph_array->advances = (float *)calloc(glyph_array->count, sizeof(float));
             glyph_array->offsets = (DWRITE_GLYPH_OFFSET *)calloc(glyph_array->count, sizeof(DWRITE_GLYPH_OFFSET));
+
+            memory_copy_typed(glyph_array->indices, glyph_indices, actual_glyph_count);
 
             hr = text_analyzer->GetGlyphPlacements(fallback_ptr + analysis_result.text_position,
                                                    cluster_map,
@@ -463,13 +461,14 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
                                                    glyph_array->offsets);
             ASSERT_HR(hr);
 
-            glyph_array->chunk->glyph_count += glyph_array->count;
-
-            free(glyph_props);
             free(text_props);
             free(cluster_map);
+
+            glyph_array->chunk->glyph_count += glyph_array->count;
           }
         }
+
+        free(glyph_props);
       }
 
       free(glyph_indices);

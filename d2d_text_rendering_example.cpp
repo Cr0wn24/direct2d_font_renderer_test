@@ -236,7 +236,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, L"Hello->world", wcslen(L"Hello->world"));
+  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, L"لكن لا بد أن أوضح لك أن كل", wcslen(L"لكن لا بد أن أوضح لك أن كل"));
   MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 12.0f, L"Hello->world", wcslen(L"Hello->world"));
   MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 14.0f, L"Hello->world", wcslen(L"Hello->world"));
   MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 20.0f, L"Hello->world", wcslen(L"Hello->world"));
@@ -374,7 +374,11 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       d2d_render_target->Clear(clear_color);
       for(int i = 0; i < ARRAYSIZE(map_text_to_glyphs_results); ++i)
       {
-        d2d_render_target->DrawGlyphRun({100, 100 + (float)i * 30}, &map_text_to_glyphs_results[i].first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+        MapTextToGlyphsResult &result = map_text_to_glyphs_results[i];
+        for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
+        {
+          d2d_render_target->DrawGlyphRun({100, 100 + (float)i * 30}, &map_text_to_glyphs_results[i].first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+        }
       }
       d2d_render_target->EndDraw();
     }
