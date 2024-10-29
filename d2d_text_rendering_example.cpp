@@ -4,12 +4,14 @@
 #include <dxgi1_3.h>
 #include <d3dcompiler.h>
 #include <dxgidebug.h>
+#include <d2d1.h>
 
 #pragma comment(lib, "dxguid")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "d3d11")
 #pragma comment(lib, "d3dcompiler")
 #pragma comment(lib, "dwrite.lib")
+#pragma comment(lib, "d2d1.lib")
 
 #include "dwrite_text_to_glyphs.h"
 
@@ -152,6 +154,10 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 #ifndef NDEBUG
     flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
+    // NOTE(hampus): thos flag is required for CreateDxgiSurfaceRenderTarget later on.
+    // see https://learn.microsoft.com/en-us/windows/win32/api/d2d1/nf-d2d1-id2d1factory-createdxgisurfacerendertarget(idxgisurface_constd2d1_render_target_properties__id2d1rendertarget)
+
+    flags |= D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0};
     hr = D3D11CreateDevice(0, D3D_DRIVER_TYPE_HARDWARE, 0, flags, levels, ARRAYSIZE(levels),
                            D3D11_SDK_VERSION, &device, 0, &context);
@@ -338,10 +344,10 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       .Height = texture_atlas_height,
       .MipLevels = 1,
       .ArraySize = 1,
-      .Format = DXGI_FORMAT_R8G8B8A8_UNORM,
+      .Format = DXGI_FORMAT_B8G8R8A8_UNORM,
       .SampleDesc = {1, 0},
       .Usage = D3D11_USAGE_DEFAULT,
-      .BindFlags = D3D11_BIND_SHADER_RESOURCE,
+      .BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
       .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
     };
 
@@ -383,7 +389,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     D3D11_BLEND_DESC desc = {};
     desc.RenderTarget[0] =
     {
-      .BlendEnable = TRUE,
+      .BlendEnable = FALSE,
       .SrcBlend = D3D11_BLEND_SRC_ALPHA,
       .DestBlend = D3D11_BLEND_INV_SRC_ALPHA,
       .BlendOp = D3D11_BLEND_OP_ADD,
@@ -473,7 +479,70 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     memcpy(&locale[0], L"en-US", sizeof(L"en-US"));
   }
 
+  //----------------------------------------------------------
+  // hampus: create d2d factory
+
+  ID2D1Factory *d2d_factory = 0;
+  hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &d2d_factory);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: create rendering params
+
+  IDWriteRenderingParams *base_rendering_params = 0;
+  IDWriteRenderingParams *rendering_params = 0;
+
+  hr = dwrite_factory->CreateRenderingParams(&base_rendering_params);
+  ASSERT_HR(hr);
+
+  FLOAT gamma = 1.0f;
+  FLOAT enhanced_contrast = base_rendering_params->GetEnhancedContrast();
+  FLOAT clear_type_level = base_rendering_params->GetClearTypeLevel();
+  hr = dwrite_factory->CreateCustomRenderingParams(gamma,
+                                                   enhanced_contrast,
+                                                   clear_type_level,
+                                                   DWRITE_PIXEL_GEOMETRY_FLAT,
+                                                   DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC,
+                                                   &rendering_params);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: create d2d render target
+
+  D2D1_RENDER_TARGET_PROPERTIES props =
+  {
+    .type = D2D1_RENDER_TARGET_TYPE_DEFAULT,
+    .pixelFormat = {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED},
+    .dpiX = 90,
+    .dpiY = 90,
+  };
+
+  IDXGISurface *surface = {};
+  hr = texture->QueryInterface(__uuidof(IDXGISurface), (void **)&surface);
+  ASSERT_HR(hr);
+
+  ID2D1RenderTarget *d2d_render_target = 0;
+  hr = d2d_factory->CreateDxgiSurfaceRenderTarget(surface, &props, &d2d_render_target);
+  ASSERT_HR(hr);
+
+  d2d_render_target->SetTextRenderingParams(rendering_params);
+
+  //----------------------------------------------------------
+  // hampus: map text to glyphs
+
   MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 16.0f, L"Hello->world", wcslen(L"Hello->world"));
+
+  //----------------------------------------------------------
+  // hampus: draw
+
+  D2D1_COLOR_F foreground_color = {1, 1, 1, 1};
+
+  ID2D1SolidColorBrush *foreground_brush = 0;
+  hr = d2d_render_target->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
+  ASSERT_HR(hr);
+  d2d_render_target->BeginDraw();
+  d2d_render_target->DrawGlyphRun({100, 100}, &map_text_to_glyphs_result.first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+  d2d_render_target->EndDraw();
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
@@ -504,7 +573,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     Vertex vertices[4] = {};
     vertices[0].position = ndc_space_from_pixels_space(render_dim, v2f32(0, 0));
-    vertices[0].uv = v2f32(1, 1);
+    vertices[0].uv = v2f32(0, 0);
     vertices[0].color = v4f32(1, 1, 1, 1);
 
     vertices[1].position = ndc_space_from_pixels_space(render_dim, v2f32((float)texture_atlas_width, 0));
@@ -516,7 +585,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     vertices[2].color = v4f32(1, 1, 1, 1);
 
     vertices[3].position = ndc_space_from_pixels_space(render_dim, v2f32((float)texture_atlas_width, (float)texture_atlas_height));
-    vertices[3].uv = v2f32(0, 0);
+    vertices[3].uv = v2f32(1, 1);
     vertices[3].color = v4f32(1, 1, 1, 1);
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
