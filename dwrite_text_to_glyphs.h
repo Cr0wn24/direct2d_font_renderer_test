@@ -433,7 +433,10 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
               if(hr == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER) && ++retry < 8)
               {
-                ASSERT(!"Should never happen?");
+                // TODO(hampus): Test this codepath.
+                max_glyph_indices_count *= 2;
+                glyph_indices = (uint16_t *)realloc(glyph_indices, max_glyph_indices_count * sizeof(uint16_t));
+                glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)realloc(glyph_props, max_glyph_indices_count * sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
               }
 
               ASSERT_HR(hr);
