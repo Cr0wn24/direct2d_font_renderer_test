@@ -3,7 +3,7 @@
 #include <d3d11.h>
 #include <dxgi1_3.h>
 #include <dxgidebug.h>
-#include <d2d1.h>
+#include <d2d1_1.h>
 
 #pragma comment(lib, "dxguid")
 #pragma comment(lib, "dxgi")
@@ -236,11 +236,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, L"لكن لا بد أن أوضح لك أن كل", wcslen(L"لكن لا بد أن أوضح لك أن كل"));
-  MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 12.0f, L"Hello->world", wcslen(L"Hello->world"));
-  MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 14.0f, L"Hello->world", wcslen(L"Hello->world"));
-  MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 20.0f, L"Hello->world", wcslen(L"Hello->world"));
-  MapTextToGlyphsResult map_text_to_glyphs_result26 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 26.0f, L"Hello->world", wcslen(L"Hello->world"));
+  const wchar_t *text = L"مرحبا بالعالم";
+  uint32_t text_length = wcslen(L"مرحبا بالعالم");
+
+  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 12.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 14.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 20.0f, text, text_length);
+  MapTextToGlyphsResult map_text_to_glyphs_result26 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 26.0f, text, text_length);
 
   MapTextToGlyphsResult map_text_to_glyphs_results[] =
   {
@@ -257,6 +260,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   ID2D1RenderTarget *d2d_render_target = 0;
   ID3D11RenderTargetView *render_target_view = 0;
   ID3D11DepthStencilView *depth_stencil_view = 0;
+  ID2D1DeviceContext *d2d_deivce_context = 0;
 
   DWORD current_width = 0;
   DWORD current_height = 0;
@@ -289,6 +293,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
       if(d2d_render_target != 0)
       {
+        d2d_deivce_context->Release();
         d2d_render_target->Release();
         foreground_brush->Release();
       }
@@ -358,6 +363,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       hr = d2d_render_target->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
       ASSERT_HR(hr);
 
+      d2d_render_target->QueryInterface(__uuidof(ID2D1DeviceContext), (void **)&d2d_deivce_context);
+
       backbuffer->Release();
       surface->Release();
 
@@ -369,15 +376,21 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view)
     {
+
       d2d_render_target->BeginDraw();
       D2D1_COLOR_F clear_color = {0.392f, 0.584f, 0.929f, 1.f};
       d2d_render_target->Clear(clear_color);
       for(int i = 0; i < ARRAYSIZE(map_text_to_glyphs_results); ++i)
       {
         MapTextToGlyphsResult &result = map_text_to_glyphs_results[i];
+        float advance = 0;
         for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
         {
-          d2d_render_target->DrawGlyphRun({100, 100 + (float)i * 30}, &map_text_to_glyphs_results[i].first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+          D2D1_RECT_F bounds = {};
+          d2d_deivce_context->GetGlyphRunWorldBounds({0, 0}, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &bounds);
+          d2d_render_target->DrawGlyphRun({100 + advance, 100 + (float)i * 30}, &segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+
+          advance += bounds.right - bounds.left;
         }
       }
       d2d_render_target->EndDraw();
@@ -400,6 +413,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     }
   }
 
+  d2d_deivce_context->Release();
   d2d_render_target->Release();
   foreground_brush->Release();
   d2d_factory->Release();
