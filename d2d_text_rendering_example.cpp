@@ -237,7 +237,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   // hampus: map text to glyphs
 
   const wchar_t *text = L"مرحبا بالعالم";
-  uint32_t text_length = wcslen(L"مرحبا بالعالم");
+  uint32_t text_length = wcslen(text);
 
   MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 8.0f, text, text_length);
   MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], L"Fira Code", 12.0f, text, text_length);
@@ -376,13 +376,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view)
     {
-
       d2d_render_target->BeginDraw();
       D2D1_COLOR_F clear_color = {0.392f, 0.584f, 0.929f, 1.f};
       d2d_render_target->Clear(clear_color);
       for(int i = 0; i < ARRAYSIZE(map_text_to_glyphs_results); ++i)
       {
-        MapTextToGlyphsResult &result = map_text_to_glyphs_results[i];
+        const MapTextToGlyphsResult &result = map_text_to_glyphs_results[i];
         float advance = 0;
         for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
         {
