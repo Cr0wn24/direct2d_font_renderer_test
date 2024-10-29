@@ -286,6 +286,13 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view == 0 || width != current_width || height != current_height)
     {
+
+      if(d2d_render_target != 0)
+      {
+        d2d_render_target->Release();
+        foreground_brush->Release();
+      }
+
       if(render_target_view != 0)
       {
         context->ClearState();
@@ -328,12 +335,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       //----------------------------------------------------------
       // hampus: recreate d2d render target
 
-      if(d2d_render_target != 0)
-      {
-        d2d_render_target->Release();
-        foreground_brush->Release();
-      }
-
       D2D1_RENDER_TARGET_PROPERTIES props =
       {
         .type = D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -368,21 +369,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view)
     {
-      D3D11_VIEWPORT viewport =
-      {
-        .TopLeftX = 0,
-        .TopLeftY = 0,
-        .Width = (FLOAT)width,
-        .Height = (FLOAT)height,
-        .MinDepth = 0,
-        .MaxDepth = 1,
-      };
-
-      //----------------------------------------------------------
-      // hampus: draw
-
       d2d_render_target->BeginDraw();
-      d2d_render_target->Clear();
+      D2D1_COLOR_F clear_color = {0.392f, 0.584f, 0.929f, 1.f};
+      d2d_render_target->Clear(clear_color);
       for(int i = 0; i < ARRAYSIZE(map_text_to_glyphs_results); ++i)
       {
         d2d_render_target->DrawGlyphRun({100, 100 + (float)i * 30}, &map_text_to_glyphs_results[i].first_segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
