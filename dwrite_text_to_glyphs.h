@@ -297,8 +297,6 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
     IDWriteLocalizedStrings *localized_strings = 0;
     fallback_font_face->GetFamilyNames(&localized_strings);
-    IDWriteFontFaceReference *font_face_reference = 0;
-    fallback_font_face->GetFontFaceReference(&font_face_reference);
     WCHAR buffer[512] = {};
     localized_strings->GetString(0, buffer, 512);
     localized_strings->Release();
