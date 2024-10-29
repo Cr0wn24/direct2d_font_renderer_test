@@ -274,8 +274,11 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     IDWriteFontFace5 *fallback_font_face = 0;
     uint32_t fallback_text_length = 0;
     {
-      float scale = 0;
+      // NOTE(hampus): We need an analysis source that holds the text and the locale
       TextAnalysisSource analysis_source{locale, text, text_length};
+
+      // NOTE(hampus): This get the appropiate font required for rendering the text
+      float scale = 0;
       hr = font_fallback->MapCharacters(&analysis_source,
                                         fallback_offset,
                                         text_length,
@@ -290,16 +293,21 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       if(fallback_font_face == 0)
       {
         // NOTE(hampus): This means that no font was available for this character.
-        // TODO(hampus): Should be replaced by '?'
+        // fallback_text_length is the number of characters to skip.
+        // TODO(hampus): Should be replaced by a missing glyph, typically glyph index 0 in fonts
         continue;
       }
     }
 
-    IDWriteLocalizedStrings *localized_strings = 0;
-    fallback_font_face->GetFamilyNames(&localized_strings);
-    WCHAR buffer[512] = {};
-    localized_strings->GetString(0, buffer, 512);
-    localized_strings->Release();
+    // NOTE(hampus): This is a way the get the font face name of the
+    // fallback font if you want that.
+    {
+      IDWriteLocalizedStrings *localized_strings = 0;
+      fallback_font_face->GetFamilyNames(&localized_strings);
+      WCHAR buffer[512] = {};
+      localized_strings->GetString(0, buffer, 512);
+      localized_strings->Release();
+    }
 
     //----------------------------------------------------------
     // hampus: new fallback font => new segment
@@ -411,13 +419,14 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
             GlyphArray *glyph_array = allocate_and_push_back_glyph_array(&first_glyph_array_chunk, &last_glyph_array_chunk);
 
             glyph_array->indices = (uint16_t *)calloc(max_glyph_indices_count, sizeof(uint16_t));
+            BOOL is_right_to_left = FALSE;
             for(int retry = 0;;)
             {
               hr = text_analyzer->GetGlyphs(fallback_ptr + analysis_result.text_position,
                                             analysis_result.text_length,
                                             fallback_font_face,
                                             false,
-                                            0,
+                                            is_right_to_left,
                                             &analysis_result.analysis,
                                             locale,
                                             0,
@@ -460,7 +469,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
                                                    fallback_font_face,
                                                    font_size,
                                                    false,
-                                                   0,
+                                                   is_right_to_left,
                                                    &analysis_result.analysis,
                                                    locale,
                                                    0,
@@ -522,7 +531,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       }
     }
 
-    segment->dwrite_glyph_run.fontFace = fallback_font_face;
+    segment->dwrite_glyph_run.fontFace = segment->font_face = fallback_font_face;
     segment->dwrite_glyph_run.fontEmSize = font_size;
     segment->dwrite_glyph_run.glyphCount = segment->glyph_array.count;
     segment->dwrite_glyph_run.glyphAdvances = segment->glyph_array.advances;

@@ -195,15 +195,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   ASSERT_HR(hr);
 
   //----------------------------------------------------------
-  // hampus: get user default locale name
-
-  wchar_t locale[LOCALE_NAME_MAX_LENGTH] = {};
-  if(!GetUserDefaultLocaleName(&locale[0], LOCALE_NAME_MAX_LENGTH))
-  {
-    memcpy(&locale[0], L"en-US", sizeof(L"en-US"));
-  }
-
-  //----------------------------------------------------------
   // hampus: create d2d factory
 
   ID2D1Factory4 *d2d_factory = 0;
@@ -211,6 +202,15 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   options.debugLevel = D2D1_DEBUG_LEVEL_WARNING;
   hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d_factory);
   ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: get user default locale name
+
+  wchar_t locale[LOCALE_NAME_MAX_LENGTH] = {};
+  if(!GetUserDefaultLocaleName(&locale[0], LOCALE_NAME_MAX_LENGTH))
+  {
+    memcpy(&locale[0], L"en-US", sizeof(L"en-US"));
+  }
 
   //----------------------------------------------------------
   // hampus: create rendering params
@@ -239,13 +239,21 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  // const wchar_t *text = L"مرحبا بالعالم";
+  const wchar_t *arabic_text = L"مرحبا بالعالم";
+  uint32_t arabic_text_length = wcslen(arabic_text);
   // const wchar_t *text = L"🤬";
   const wchar_t *text = L"!=>=-><-=><=🤬😛";
   uint32_t text_length = wcslen(text);
   const wchar_t *font = L"Fira Code";
 
-  MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, text_length);
+  MapTextToGlyphsResult text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, text_length);
+  MapTextToGlyphsResult arabic_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, arabic_text_length);
+
+  MapTextToGlyphsResult text_to_glyphs_results[] =
+  {
+    text_to_glyphs_result,
+    arabic_text_to_glyphs_result,
+  };
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
@@ -366,86 +374,101 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       d2d_render_target->BeginDraw();
       D2D1_COLOR_F clear_color = {0.392f, 0.584f, 0.929f, 1.f};
       d2d_render_target->Clear(clear_color);
-      const MapTextToGlyphsResult &result = map_text_to_glyphs_result;
-      float advance = 0;
-      for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
+      float advance_x = 0;
+      float advance_y = 0;
+      for(int result_idx = 0; result_idx < ARRAYSIZE(text_to_glyphs_results); ++result_idx)
       {
-        IDWriteColorGlyphRunEnumerator1 *run_enumerator = 0;
-        const DWRITE_GLYPH_IMAGE_FORMATS desired_glyph_image_formats = DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_CFF |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_COLR |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_SVG |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_PNG |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
-                                                                       DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
-        hr = dwrite_factory->TranslateColorGlyphRun({0, 0}, &segment->dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
-        if(hr == DWRITE_E_NOCOLOR)
+        const MapTextToGlyphsResult &result = text_to_glyphs_results[result_idx];
+        float max_advance_for_this_result = 0;
+        for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
         {
-          // NOTE(hampus): There was no colored glyph. We can draw them as normal
-
-          foreground_brush->SetColor({1, 1, 1, 1});
-          d2d_device_context->DrawGlyphRun({100 + advance, 100}, &segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
-        }
-        else
-        {
-          // NOTE(hampus): There was colored glyph. We have to draw them differently
-          for(;;)
+          IDWriteColorGlyphRunEnumerator1 *run_enumerator = 0;
+          const DWRITE_GLYPH_IMAGE_FORMATS desired_glyph_image_formats = DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_CFF |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_COLR |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_SVG |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_PNG |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
+                                                                         DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
+          hr = dwrite_factory->TranslateColorGlyphRun({0, 0}, &segment->dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
+          D2D1_POINT_2F baseline = {};
+          baseline.x = 100 + advance_x;
+          baseline.y = 100 + advance_y;
+          if(hr == DWRITE_E_NOCOLOR)
           {
-            BOOL have_run = FALSE;
-            hr = run_enumerator->MoveNext(&have_run);
-            ASSERT_HR(hr);
-            if(!have_run)
+            // NOTE(hampus): There was no colored glyph. We can draw them as normal
+
+            foreground_brush->SetColor({1, 1, 1, 1});
+            d2d_device_context->DrawGlyphRun(baseline, &segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+          }
+          else
+          {
+            // NOTE(hampus): There was colored glyph. We have to draw them differently
+            for(;;)
             {
-              break;
+              BOOL have_run = FALSE;
+              hr = run_enumerator->MoveNext(&have_run);
+              ASSERT_HR(hr);
+              if(!have_run)
+              {
+                break;
+              }
+
+              DWRITE_COLOR_GLYPH_RUN1 const *color_glyph_run = 0;
+              hr = run_enumerator->GetCurrentRun(&color_glyph_run);
+              ASSERT_HR(hr);
+
+              foreground_brush->SetColor(color_glyph_run->runColor);
+
+              switch(color_glyph_run->glyphImageFormat)
+              {
+                case DWRITE_GLYPH_IMAGE_FORMATS_NONE:
+                {
+                  // NOTE(hampus): Do nothing
+                  // TODO(hampus): Find out when this is the case.
+                }
+                break;
+                case DWRITE_GLYPH_IMAGE_FORMATS_PNG:
+                case DWRITE_GLYPH_IMAGE_FORMATS_JPEG:
+                case DWRITE_GLYPH_IMAGE_FORMATS_TIFF:
+                case DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8:
+                {
+                  // TODO(hampus): This has not been tested.
+                  d2d_device_context->DrawColorBitmapGlyphRun(color_glyph_run->glyphImageFormat, baseline, &color_glyph_run->glyphRun, color_glyph_run->measuringMode, D2D1_COLOR_BITMAP_GLYPH_SNAP_OPTION_DEFAULT);
+                }
+                break;
+                case DWRITE_GLYPH_IMAGE_FORMATS_SVG:
+                {
+                  // TODO(hampus): This has not been tested.
+                  d2d_device_context->DrawSvgGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, 0, 0, color_glyph_run->measuringMode);
+                }
+                break;
+                default:
+                {
+                  d2d_device_context->DrawGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+                }
+                break;
+              }
+
+              ASSERT_HR(hr);
             }
+          }
 
-            DWRITE_COLOR_GLYPH_RUN1 const *color_glyph_run = 0;
-            hr = run_enumerator->GetCurrentRun(&color_glyph_run);
-            ASSERT_HR(hr);
+          // hampus: advance
 
-            foreground_brush->SetColor(color_glyph_run->runColor);
+          DWRITE_FONT_METRICS font_metrics = {};
+          segment->font_face->GetMetrics(&font_metrics);
+          float advance_y_for_this = (font_metrics.ascent + font_metrics.descent + font_metrics.lineGap) * segment->dwrite_glyph_run.fontEmSize / font_metrics.designUnitsPerEm;
+          max_advance_for_this_result = max(max_advance_for_this_result, advance_y_for_this);
 
-            switch(color_glyph_run->glyphImageFormat)
-            {
-              case DWRITE_GLYPH_IMAGE_FORMATS_NONE:
-              {
-                // NOTE(hampus): Do nothing
-                // TODO(hampus): Find out when this is the case.
-              }
-              break;
-              case DWRITE_GLYPH_IMAGE_FORMATS_PNG:
-              case DWRITE_GLYPH_IMAGE_FORMATS_JPEG:
-              case DWRITE_GLYPH_IMAGE_FORMATS_TIFF:
-              case DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8:
-              {
-                // TODO(hampus): This is not tested.
-                d2d_device_context->DrawColorBitmapGlyphRun(color_glyph_run->glyphImageFormat, {0, 0}, &color_glyph_run->glyphRun, color_glyph_run->measuringMode, D2D1_COLOR_BITMAP_GLYPH_SNAP_OPTION_DEFAULT);
-              }
-              break;
-              case DWRITE_GLYPH_IMAGE_FORMATS_SVG:
-              {
-                // TODO(hampus): This is not tested.
-                d2d_device_context->DrawSvgGlyphRun({100, 100}, &color_glyph_run->glyphRun, foreground_brush, 0, 0, color_glyph_run->measuringMode);
-              }
-              break;
-              default:
-              {
-                d2d_device_context->DrawGlyphRun({100 + advance, 100}, &color_glyph_run->glyphRun, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
-              }
-              break;
-            }
-
-            ASSERT_HR(hr);
+          for(int glyph_idx = 0; glyph_idx < segment->glyph_array.count; ++glyph_idx)
+          {
+            advance_x += segment->glyph_array.advances[glyph_idx];
           }
         }
-
-        // hampus: advance
-
-        for(int glyph_idx = 0; glyph_idx < segment->glyph_array.count; ++glyph_idx)
-        {
-          advance += segment->glyph_array.advances[glyph_idx];
-        }
+        advance_y += max_advance_for_this_result;
+        advance_x = 0;
       }
       hr = d2d_render_target->EndDraw();
       ASSERT_HR(hr);
