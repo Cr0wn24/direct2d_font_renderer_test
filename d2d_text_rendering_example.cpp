@@ -13,8 +13,6 @@
 
 #include "dwrite_text_to_glyphs.h"
 
-static bool g_running;
-
 ////////////////////////////////////////////////////////////
 // hampus: window proc callback
 
@@ -24,19 +22,9 @@ window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
   LRESULT result = 0;
   switch(message)
   {
-    case WM_QUIT:
-    {
-      g_running = false;
-    }
-    break;
     case WM_DESTROY:
     {
-      g_running = false;
-    }
-    break;
-    case WM_CLOSE:
-    {
-      g_running = false;
+      PostQuitMessage(0);
     }
     break;
     default:
@@ -276,11 +264,15 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: main loop
 
-  g_running = true;
-  while(g_running)
+  bool running = true;
+  while(running)
   {
     for(MSG message; PeekMessageW(&message, 0, 0, 0, PM_REMOVE);)
     {
+      if(message.message == WM_QUIT)
+      {
+        running = false;
+      }
       TranslateMessage(&message);
       DispatchMessageW(&message);
     }
