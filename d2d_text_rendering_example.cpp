@@ -3,7 +3,7 @@
 #include <d3d11.h>
 #include <dxgi1_3.h>
 #include <dxgidebug.h>
-#include <d2d1_1.h>
+#include <d2d1_3.h>
 
 #pragma comment(lib, "dxguid")
 #pragma comment(lib, "dxgi")
@@ -122,8 +122,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   // hampus: create dxgi swap chain
 
   IDXGISwapChain1 *swap_chain = 0;
+  IDXGIDevice *dxgi_device = 0;
   {
-    IDXGIDevice *dxgi_device = 0;
     IDXGIAdapter *dxgi_adapter = 0;
     IDXGIFactory2 *factory = 0;
 
@@ -154,15 +154,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     factory->Release();
     dxgi_adapter->Release();
-    dxgi_device->Release();
   }
 
   //----------------------------------------------------------
   // hampus: create dwrite factory
 
-  IDWriteFactory2 *dwrite_factory = 0;
+  IDWriteFactory4 *dwrite_factory = 0;
   hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
-                           __uuidof(IDWriteFactory2),
+                           __uuidof(IDWriteFactory4),
                            (IUnknown **)&dwrite_factory);
   ASSERT_HR(hr);
 
@@ -207,7 +206,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: create d2d factory
 
-  ID2D1Factory *d2d_factory = 0;
+  ID2D1Factory4 *d2d_factory = 0;
   D2D1_FACTORY_OPTIONS options = {};
   options.debugLevel = D2D1_DEBUG_LEVEL_WARNING;
   hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d_factory);
@@ -236,24 +235,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  const wchar_t *text = L"مرحبا بالعالم";
+  // const wchar_t *text = L"مرحبا بالعالم";
+  const wchar_t *text = L"🤬";
   uint32_t text_length = wcslen(text);
-  const wchar_t *font = L"Segoe UI";
+  const wchar_t *font = L"Consolas";
 
-  MapTextToGlyphsResult map_text_to_glyphs_result8 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 8.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result12 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 12.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result14 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 14.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result20 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 20.0f, text, text_length);
-  MapTextToGlyphsResult map_text_to_glyphs_result26 = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 26.0f, text, text_length);
-
-  MapTextToGlyphsResult map_text_to_glyphs_results[] =
-  {
-    map_text_to_glyphs_result8,
-    map_text_to_glyphs_result12,
-    map_text_to_glyphs_result14,
-    map_text_to_glyphs_result20,
-    map_text_to_glyphs_result26,
-  };
+  MapTextToGlyphsResult map_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 20.0f, text, text_length);
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
@@ -261,7 +248,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   ID2D1RenderTarget *d2d_render_target = 0;
   ID3D11RenderTargetView *render_target_view = 0;
   ID3D11DepthStencilView *depth_stencil_view = 0;
-  ID2D1DeviceContext *d2d_deivce_context = 0;
+  ID2D1DeviceContext4 *d2d_device_context = 0;
 
   DWORD current_width = 0;
   DWORD current_height = 0;
@@ -294,7 +281,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
       if(d2d_render_target != 0)
       {
-        d2d_deivce_context->Release();
+        d2d_device_context->Release();
         d2d_render_target->Release();
         foreground_brush->Release();
       }
@@ -364,7 +351,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       hr = d2d_render_target->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
       ASSERT_HR(hr);
 
-      d2d_render_target->QueryInterface(__uuidof(ID2D1DeviceContext), (void **)&d2d_deivce_context);
+      hr = d2d_render_target->QueryInterface(__uuidof(ID2D1DeviceContext4), (void **)&d2d_device_context);
+      ASSERT_HR(hr);
 
       backbuffer->Release();
       surface->Release();
@@ -374,23 +362,50 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     }
 
     // hampus: draw
-
     if(render_target_view)
     {
       d2d_render_target->BeginDraw();
       D2D1_COLOR_F clear_color = {0.392f, 0.584f, 0.929f, 1.f};
       d2d_render_target->Clear(clear_color);
-      for(int i = 0; i < ARRAYSIZE(map_text_to_glyphs_results); ++i)
+      const MapTextToGlyphsResult &result = map_text_to_glyphs_result;
+      float advance = 0;
+      for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
       {
-        const MapTextToGlyphsResult &result = map_text_to_glyphs_results[i];
-        float advance = 0;
-        for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
+        IDWriteColorGlyphRunEnumerator1 *run_enumerator = 0;
+        DWRITE_GLYPH_IMAGE_FORMATS desired_glyph_image_formats = DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_CFF |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_COLR |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_SVG |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_PNG |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
+                                                                 DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
+        hr = dwrite_factory->TranslateColorGlyphRun({0, 0}, &segment->dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
+        for(;;)
         {
-          D2D1_RECT_F bounds = {};
-          d2d_render_target->DrawGlyphRun({100 + advance, 100 + (float)i * 30}, &segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
-          d2d_deivce_context->GetGlyphRunWorldBounds({0, 0}, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &bounds);
+          BOOL have_run = FALSE;
+          run_enumerator->MoveNext(&have_run);
+          if(!have_run)
+          {
+            break;
+          }
+          ASSERT_HR(hr);
 
-          advance += bounds.right - bounds.left;
+          DWRITE_COLOR_GLYPH_RUN1 const *colorGlyphRun = 0;
+          hr = run_enumerator->GetCurrentRun(&colorGlyphRun);
+          ASSERT_HR(hr);
+
+          foreground_brush->SetColor(colorGlyphRun->runColor);
+
+          // TODO(hampus): switch on the colorGlyphRun->glyphImageFormat
+          d2d_device_context->DrawGlyphRun({100 + advance, 100}, &colorGlyphRun->glyphRun, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+          // d2d_device_context->DrawColorBitmapGlyphRun(colorGlyphRun->glyphImageFormat, {0, 0}, &colorGlyphRun->glyphRun, colorGlyphRun->measuringMode, D2D1_COLOR_BITMAP_GLYPH_SNAP_OPTION_DEFAULT);
+          // d2d_device_context->DrawSvgGlyphRun({100, 100}, &colorGlyphRun->glyphRun, foreground_brush, 0, 0, colorGlyphRun->measuringMode);
+#if 0
+          D2D1_RECT_F bounds = {};
+          hr = d2d_device_context->GetGlyphRunWorldBounds({0, 0}, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &bounds);
+#endif
+          ASSERT_HR(hr);
         }
       }
       d2d_render_target->EndDraw();
@@ -413,7 +428,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     }
   }
 
-  d2d_deivce_context->Release();
+  d2d_device_context->Release();
   d2d_render_target->Release();
   foreground_brush->Release();
   d2d_factory->Release();
