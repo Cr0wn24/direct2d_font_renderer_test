@@ -248,7 +248,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   ID2D1SolidColorBrush *foreground_brush = 0;
   ID2D1RenderTarget *d2d_render_target = 0;
   ID3D11RenderTargetView *render_target_view = 0;
-  ID3D11DepthStencilView *depth_stencil_view = 0;
   ID2D1DeviceContext4 *d2d_device_context = 0;
 
   DWORD current_width = 0;
@@ -291,7 +290,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       {
         context->ClearState();
         render_target_view->Release();
-        depth_stencil_view->Release();
         render_target_view = 0;
       }
 
@@ -319,11 +317,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
           .Usage = D3D11_USAGE_DEFAULT,
           .BindFlags = D3D11_BIND_DEPTH_STENCIL,
         };
-
-        ID3D11Texture2D *depth = 0;
-        device->CreateTexture2D(&depth_desc, 0, &depth);
-        device->CreateDepthStencilView((ID3D11Resource *)depth, 0, &depth_stencil_view);
-        depth->Release();
       }
 
       //----------------------------------------------------------
