@@ -60,10 +60,10 @@ struct MapTextToGlyphsResult
 
 struct TextAnalysisSource final : IDWriteTextAnalysisSource
 {
-  TextAnalysisSource(const wchar_t *locale, const wchar_t *text, const UINT32 textLength) noexcept
+  TextAnalysisSource(const wchar_t *locale, const wchar_t *text, const UINT32 text_length) noexcept
       : _locale{locale},
         _text{text},
-        _text_length{textLength}
+        _text_length{text_length}
   {
   }
 
@@ -93,20 +93,20 @@ struct TextAnalysisSource final : IDWriteTextAnalysisSource
   }
 
   HRESULT STDMETHODCALLTYPE
-  GetTextAtPosition(UINT32 textPosition, const WCHAR **textString, UINT32 *textLength) noexcept override
+  GetTextAtPosition(UINT32 text_pos, const WCHAR **text_string, UINT32 *text_length) noexcept override
   {
-    textPosition = min(textPosition, _text_length);
-    *textString = _text + textPosition;
-    *textLength = _text_length - textPosition;
+    text_pos = min(text_pos, _text_length);
+    *text_string = _text + text_pos;
+    *text_length = _text_length - text_pos;
     return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
-  GetTextBeforePosition(UINT32 textPosition, const WCHAR **textString, UINT32 *textLength) noexcept override
+  GetTextBeforePosition(UINT32 text_pos, const WCHAR **text_string, UINT32 *text_length) noexcept override
   {
-    textPosition = min(textPosition, _text_length);
-    *textString = _text;
-    *textLength = textPosition;
+    text_pos = min(text_pos, _text_length);
+    *text_string = _text;
+    *text_length = text_pos;
     return S_OK;
   }
 
@@ -117,15 +117,15 @@ struct TextAnalysisSource final : IDWriteTextAnalysisSource
   }
 
   HRESULT STDMETHODCALLTYPE
-  GetLocaleName(UINT32 textPosition, UINT32 *textLength, const WCHAR **localeName) noexcept override
+  GetLocaleName(UINT32 text_pos, UINT32 *text_length, const WCHAR **locale_name) noexcept override
   {
-    *textLength = _text_length - textPosition;
-    *localeName = _locale;
+    *text_length = _text_length - text_pos;
+    *locale_name = _locale;
     return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
-  GetNumberSubstitution(UINT32 textPosition, UINT32 *textLength, IDWriteNumberSubstitution **numberSubstitution) noexcept override
+  GetNumberSubstitution(UINT32 text_pos, UINT32 *text_length, IDWriteNumberSubstitution **nunber_substitution) noexcept override
   {
     return E_NOTIMPL;
   }
@@ -171,20 +171,20 @@ struct TextAnalysisSink final : IDWriteTextAnalysisSink
   }
 
   HRESULT STDMETHODCALLTYPE
-  QueryInterface(const IID &riid, void **ppvObject) noexcept override
+  QueryInterface(const IID &riid, void **object) noexcept override
   {
     if(IsEqualGUID(riid, __uuidof(IDWriteTextAnalysisSink)))
     {
-      *ppvObject = this;
+      *object = this;
       return S_OK;
     }
 
-    *ppvObject = 0;
+    object = 0;
     return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE
-  SetScriptAnalysis(UINT32 textPosition, UINT32 textLength, const DWRITE_SCRIPT_ANALYSIS *scriptAnalysis) noexcept override
+  SetScriptAnalysis(UINT32 text_pos, UINT32 text_length, const DWRITE_SCRIPT_ANALYSIS *script_analysis) noexcept override
   {
     TextAnalysisSinkResultChunk *chunk = last_result_chunk;
     if(chunk == 0 || chunk->count == ARRAYSIZE(chunk->v))
@@ -201,30 +201,30 @@ struct TextAnalysisSink final : IDWriteTextAnalysisSink
       }
     }
     TextAnalysisSinkResult &result = chunk->v[chunk->count];
-    result.text_position = textPosition;
-    result.text_length = textLength;
-    result.analysis = *scriptAnalysis;
+    result.text_position = text_pos;
+    result.text_length = text_length;
+    result.analysis = *script_analysis;
     chunk->count += 1;
     return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
-  SetLineBreakpoints(UINT32 textPosition, UINT32 textLength, const DWRITE_LINE_BREAKPOINT *lineBreakpoints) noexcept override
+  SetLineBreakpoints(UINT32 text_pos, UINT32 text_length, const DWRITE_LINE_BREAKPOINT *line_breakpoints) noexcept override
   {
     return E_NOTIMPL;
   }
 
   HRESULT STDMETHODCALLTYPE
-  SetBidiLevel(UINT32 textPosition, UINT32 textLength, UINT8 explicitLevel, UINT8 resolvedLevel) noexcept override
+  SetBidiLevel(UINT32 text_pos, UINT32 text_length, UINT8 explicit_level, UINT8 resolved_level) noexcept override
   {
     // TODO(hampus): Is this correct?
-    last_result_chunk->v[last_result_chunk->count - 1].explicit_bidi_level = explicitLevel;
-    last_result_chunk->v[last_result_chunk->count - 1].resolved_bidi_level = resolvedLevel;
+    last_result_chunk->v[last_result_chunk->count - 1].explicit_bidi_level = explicit_level;
+    last_result_chunk->v[last_result_chunk->count - 1].resolved_bidi_level = resolved_level;
     return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
-  SetNumberSubstitution(UINT32 textPosition, UINT32 textLength, IDWriteNumberSubstitution *numberSubstitution) noexcept override
+  SetNumberSubstitution(UINT32 text_pos, UINT32 text_length, IDWriteNumberSubstitution *nunber_substitution) noexcept override
   {
     return E_NOTIMPL;
   }
