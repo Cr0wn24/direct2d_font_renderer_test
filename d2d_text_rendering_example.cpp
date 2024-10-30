@@ -241,18 +241,16 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
   const wchar_t *arabic_text = L"مرحبا بالعالم";
   uint32_t arabic_text_length = wcslen(arabic_text);
-  // const wchar_t *text = L"🤬";
-  const wchar_t *text = L"!=>=-><-=><=🤬😛";
+  const wchar_t *text = L"Hello world";
+  // const wchar_t *text = L"!=>=-><-=><=😆";
+  // const wchar_t *text = L"😆👇"; // TODO(hampus): This does not render correctly
   uint32_t text_length = wcslen(text);
   const wchar_t *font = L"Fira Code";
 
-  MapTextToGlyphsResult text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, text_length);
-  MapTextToGlyphsResult arabic_text_to_glyphs_result = dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, arabic_text_length);
-
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {
-    text_to_glyphs_result,
-    arabic_text_to_glyphs_result,
+    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, text_length),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, arabic_text_length),
   };
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
@@ -382,6 +380,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
         float max_advance_for_this_result = 0;
         for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
         {
+          D2D1_POINT_2F baseline = {};
+          baseline.x = 500 + advance_x;
+          baseline.y = 100 + advance_y;
+
+          D2D1_RECT_F glyph_world_bounds = {};
+          d2d_device_context->GetGlyphRunWorldBounds(baseline, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &glyph_world_bounds);
+          bool is_whitespace = !(glyph_world_bounds.right > glyph_world_bounds.left && glyph_world_bounds.bottom > glyph_world_bounds.top);
+
           IDWriteColorGlyphRunEnumerator1 *run_enumerator = 0;
           const DWRITE_GLYPH_IMAGE_FORMATS desired_glyph_image_formats = DWRITE_GLYPH_IMAGE_FORMATS_TRUETYPE |
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_CFF |
@@ -391,10 +397,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
-          hr = dwrite_factory->TranslateColorGlyphRun({0, 0}, &segment->dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
-          D2D1_POINT_2F baseline = {};
-          baseline.x = 100 + advance_x;
-          baseline.y = 100 + advance_y;
+          hr = dwrite_factory->TranslateColorGlyphRun(baseline, &segment->dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
           if(hr == DWRITE_E_NOCOLOR)
           {
             // NOTE(hampus): There was no colored glyph. We can draw them as normal

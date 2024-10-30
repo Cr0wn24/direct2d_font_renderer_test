@@ -21,6 +21,8 @@ struct GlyphArray
 {
   GlyphArrayChunk *chunk;
 
+  uint32_t bidi_level;
+
   uint64_t count;
   uint16_t *indices;
   float *advances;
@@ -139,6 +141,8 @@ struct TextAnalysisSinkResult
   uint32_t text_position;
   uint32_t text_length;
   DWRITE_SCRIPT_ANALYSIS analysis;
+  uint32_t resolved_bidi_level;
+  uint32_t explicit_bidi_level;
 };
 
 struct TextAnalysisSinkResultChunk
@@ -213,7 +217,10 @@ struct TextAnalysisSink final : IDWriteTextAnalysisSink
   HRESULT STDMETHODCALLTYPE
   SetBidiLevel(UINT32 textPosition, UINT32 textLength, UINT8 explicitLevel, UINT8 resolvedLevel) noexcept override
   {
-    return E_NOTIMPL;
+    // TODO(hampus): Is this correct?
+    last_result_chunk->v[last_result_chunk->count - 1].explicit_bidi_level = explicitLevel;
+    last_result_chunk->v[last_result_chunk->count - 1].resolved_bidi_level = resolvedLevel;
+    return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -404,6 +411,12 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
         hr = text_analyzer->AnalyzeScript(&analysis_source, 0, complex_mapped_length, &analysis_sink);
         ASSERT_HR(hr);
 
+        // NOTE(hampus): The text range given to AnalyzeBidi should not split a paragraph.
+        // It is meant for one paragraph as a whole or multiple paragraphs.
+        // TODO(hampus): What to do about it? What is a paragraph?
+        hr = text_analyzer->AnalyzeBidi(&analysis_source, 0, complex_mapped_length, &analysis_sink);
+        ASSERT_HR(hr);
+
         DWRITE_SHAPING_GLYPH_PROPERTIES *glyph_props = (DWRITE_SHAPING_GLYPH_PROPERTIES *)calloc(max_glyph_indices_count, sizeof(DWRITE_SHAPING_GLYPH_PROPERTIES));
 
         for(TextAnalysisSinkResultChunk *chunk = analysis_sink.first_result_chunk; chunk != 0; chunk = chunk->next)
@@ -418,8 +431,10 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
             GlyphArray *glyph_array = allocate_and_push_back_glyph_array(&first_glyph_array_chunk, &last_glyph_array_chunk);
 
+            glyph_array->bidi_level = analysis_result.resolved_bidi_level;
+
             glyph_array->indices = (uint16_t *)calloc(max_glyph_indices_count, sizeof(uint16_t));
-            BOOL is_right_to_left = FALSE;
+            BOOL is_right_to_left = (BOOL)(analysis_result.resolved_bidi_level & 1);
             for(int retry = 0;;)
             {
               hr = text_analyzer->GetGlyphs(fallback_ptr + analysis_result.text_position,
@@ -521,6 +536,12 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
           memory_copy_typed(segment_glyph_array.advances + glyph_idx_offset, glyph_array.advances, glyph_array.count);
           memory_copy_typed(segment_glyph_array.offsets + glyph_idx_offset, glyph_array.offsets, glyph_array.count);
 
+          // TODO(hampus): is it safe to set the bidi level of the entire segment to the
+          // bidi level of the glyph array? We maybe need a new segment for each
+          // differing level of bidi.
+          // TODO(hampus): Should probably assert in case the bidi levels don't match.
+          segment_glyph_array.bidi_level = glyph_array.bidi_level;
+
           free(glyph_array.indices);
           free(glyph_array.advances);
           free(glyph_array.offsets);
@@ -537,6 +558,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     segment->dwrite_glyph_run.glyphAdvances = segment->glyph_array.advances;
     segment->dwrite_glyph_run.glyphIndices = segment->glyph_array.indices;
     segment->dwrite_glyph_run.glyphOffsets = segment->glyph_array.offsets;
+    segment->dwrite_glyph_run.bidiLevel = segment->glyph_array.bidi_level;
 
     fallback_offset += fallback_text_length;
   }
