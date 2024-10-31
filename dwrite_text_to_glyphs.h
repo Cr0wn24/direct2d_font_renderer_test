@@ -256,6 +256,7 @@ allocate_and_push_back_glyph_array(GlyphArrayChunk **first_chunk, GlyphArrayChun
       else
       {
         (*last_chunk)->next = glyph_array_chunk;
+        glyph_array_chunk->prev = *last_chunk;
         *last_chunk = glyph_array_chunk;
       }
     }
@@ -327,6 +328,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     else
     {
       result.last_segment->next = segment;
+      segment->prev = result.last_segment;
       result.last_segment = segment;
     }
 
