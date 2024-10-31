@@ -449,7 +449,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
                 break;
                 default:
                 {
-                  d2d_device_context->DrawGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+                  d2d_device_context->DrawGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, color_glyph_run->measuringMode);
                 }
                 break;
               }
