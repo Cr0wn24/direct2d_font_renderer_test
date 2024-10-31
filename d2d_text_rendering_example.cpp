@@ -367,6 +367,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     // hampus: draw
 
+    // NOTE(hampus): This won't draw arabic sentences correctly if our base
+    // font doesn't have arabic. Because in that case, each space in the sentence
+    // will fall back to our base font while the arabic words will fall back
+    // to another font, thus creating multiple segments and thus drawing
+    // the words in reverse order. This won't be a problem however if you do
+    // your own layouting of the characters. It is only a problem if you draw
+    // entire sentences to the screen directly with DrawGlyphRun().
+
     if(render_target_view)
     {
       d2d_render_target->BeginDraw();
