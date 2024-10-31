@@ -239,18 +239,19 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  const wchar_t *arabic_text = L"مرحبا بالعالم";
-  uint32_t arabic_text_length = wcslen(arabic_text);
+  const wchar_t *ligatures_text = L"!=>=-><-=><=";
+  const wchar_t *emojis_text = L"😣😆😠";
   const wchar_t *text = L"Hello world";
-  // const wchar_t *text = L"!=>=-><-=><=😆";
-  // const wchar_t *text = L"😆👇"; // TODO(hampus): This does not render correctly
-  uint32_t text_length = wcslen(text);
+  const wchar_t *arabic_text = L"مرحبا بالعالم";
+
   const wchar_t *font = L"Fira Code";
 
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {
-    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, text_length),
-    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, arabic_text_length),
+    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, emojis_text, wcslen(emojis_text)),
+    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
+    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
   };
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
@@ -288,7 +289,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view == 0 || width != current_width || height != current_height)
     {
-
       if(d2d_render_target != 0)
       {
         d2d_device_context->Release();
@@ -426,7 +426,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
                 break;
               }
 
-              DWRITE_COLOR_GLYPH_RUN1 const *color_glyph_run = 0;
+              const DWRITE_COLOR_GLYPH_RUN1 *color_glyph_run = 0;
               hr = run_enumerator->GetCurrentRun(&color_glyph_run);
               ASSERT_HR(hr);
 
@@ -446,18 +446,18 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
                 case DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8:
                 {
                   ASSERT(!"Not tested");
-                  d2d_device_context->DrawColorBitmapGlyphRun(color_glyph_run->glyphImageFormat, baseline, &color_glyph_run->glyphRun, color_glyph_run->measuringMode, D2D1_COLOR_BITMAP_GLYPH_SNAP_OPTION_DEFAULT);
+                  d2d_device_context->DrawColorBitmapGlyphRun(color_glyph_run->glyphImageFormat, {color_glyph_run->baselineOriginX, color_glyph_run->baselineOriginY}, &color_glyph_run->glyphRun, color_glyph_run->measuringMode, D2D1_COLOR_BITMAP_GLYPH_SNAP_OPTION_DEFAULT);
                 }
                 break;
                 case DWRITE_GLYPH_IMAGE_FORMATS_SVG:
                 {
                   ASSERT(!"Not tested");
-                  d2d_device_context->DrawSvgGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, 0, 0, color_glyph_run->measuringMode);
+                  d2d_device_context->DrawSvgGlyphRun({color_glyph_run->baselineOriginX, color_glyph_run->baselineOriginY}, &color_glyph_run->glyphRun, foreground_brush, 0, 0, color_glyph_run->measuringMode);
                 }
                 break;
                 default:
                 {
-                  d2d_device_context->DrawGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, color_glyph_run->measuringMode);
+                  d2d_device_context->DrawGlyphRun({color_glyph_run->baselineOriginX, color_glyph_run->baselineOriginY}, &color_glyph_run->glyphRun, color_glyph_run->glyphRunDescription, foreground_brush, color_glyph_run->measuringMode);
                 }
                 break;
               }
