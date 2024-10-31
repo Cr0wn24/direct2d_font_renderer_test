@@ -437,13 +437,13 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
                 case DWRITE_GLYPH_IMAGE_FORMATS_TIFF:
                 case DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8:
                 {
-                  // TODO(hampus): This has not been tested.
+                  ASSERT(!"Not tested");
                   d2d_device_context->DrawColorBitmapGlyphRun(color_glyph_run->glyphImageFormat, baseline, &color_glyph_run->glyphRun, color_glyph_run->measuringMode, D2D1_COLOR_BITMAP_GLYPH_SNAP_OPTION_DEFAULT);
                 }
                 break;
                 case DWRITE_GLYPH_IMAGE_FORMATS_SVG:
                 {
-                  // TODO(hampus): This has not been tested.
+                  ASSERT(!"Not tested");
                   d2d_device_context->DrawSvgGlyphRun(baseline, &color_glyph_run->glyphRun, foreground_brush, 0, 0, color_glyph_run->measuringMode);
                 }
                 break;
