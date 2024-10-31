@@ -197,10 +197,18 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: create d2d factory
 
-  ID2D1Factory4 *d2d_factory = 0;
+  ID2D1Factory5 *d2d_factory = 0;
   D2D1_FACTORY_OPTIONS options = {};
   options.debugLevel = D2D1_DEBUG_LEVEL_WARNING;
   hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d_factory);
+  ASSERT_HR(hr);
+
+  //----------------------------------------------------------
+  // hampus: create d2d device
+
+  ID2D1Device4 *d2d_device = 0;
+
+  hr = d2d_factory->CreateDevice(dxgi_device, &d2d_device);
   ASSERT_HR(hr);
 
   //----------------------------------------------------------
@@ -248,16 +256,15 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {
-    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
     dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, emojis_text, wcslen(emojis_text)),
-    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
-    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
   };
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
   ID2D1SolidColorBrush *foreground_brush = 0;
-  ID2D1RenderTarget *d2d_render_target = 0;
   ID3D11RenderTargetView *render_target_view = 0;
   ID2D1DeviceContext4 *d2d_device_context = 0;
 
@@ -289,10 +296,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view == 0 || width != current_width || height != current_height)
     {
-      if(d2d_render_target != 0)
+      if(d2d_device_context != 0)
       {
         d2d_device_context->Release();
-        d2d_render_target->Release();
         foreground_brush->Release();
       }
 
@@ -332,11 +338,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       //----------------------------------------------------------
       // hampus: recreate d2d render target
 
-      D2D1_RENDER_TARGET_PROPERTIES props =
-      {
-        .type = D2D1_RENDER_TARGET_TYPE_DEFAULT,
-        .pixelFormat = {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE},
-      };
+      D2D1_DEVICE_CONTEXT_OPTIONS options = {};
+      hr = d2d_device->CreateDeviceContext(options, &d2d_device_context);
+      ASSERT_HR(hr);
 
       ID3D11Texture2D *backbuffer = 0;
       swap_chain->GetBuffer(0, IID_ID3D11Texture2D, (void **)&backbuffer);
@@ -345,21 +349,30 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       hr = backbuffer->QueryInterface(__uuidof(IDXGISurface), (void **)&surface);
       ASSERT_HR(hr);
 
-      hr = d2d_factory->CreateDxgiSurfaceRenderTarget(surface, &props, &d2d_render_target);
+      UINT dpi = GetDpiForWindow(hwnd);
+
+      D2D1_BITMAP_PROPERTIES1 bitmapProperties = {};
+      bitmapProperties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+      bitmapProperties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+      bitmapProperties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_IGNORE;
+      bitmapProperties.dpiY = dpi;
+      bitmapProperties.dpiX = dpi;
+
+      ID2D1Bitmap1 *bitmap = 0;
+      hr = d2d_device_context->CreateBitmapFromDxgiSurface(surface, bitmapProperties, &bitmap);
       ASSERT_HR(hr);
 
-      d2d_render_target->SetTextRenderingParams(rendering_params);
+      d2d_device_context->SetTarget(bitmap);
+
+      d2d_device_context->SetTextRenderingParams(rendering_params);
 
       D2D1_COLOR_F foreground_color = {1, 1, 1, 1};
-
-      hr = d2d_render_target->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
+      hr = d2d_device_context->CreateSolidColorBrush(&foreground_color, 0, &foreground_brush);
       ASSERT_HR(hr);
 
-      hr = d2d_render_target->QueryInterface(__uuidof(ID2D1DeviceContext4), (void **)&d2d_device_context);
-      ASSERT_HR(hr);
-
-      backbuffer->Release();
+      bitmap->Release();
       surface->Release();
+      backbuffer->Release();
 
       current_width = width;
       current_height = height;
@@ -377,9 +390,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
     if(render_target_view)
     {
-      d2d_render_target->BeginDraw();
+      d2d_device_context->BeginDraw();
       D2D1_COLOR_F clear_color = {0.392f, 0.584f, 0.929f, 1.f};
-      d2d_render_target->Clear(clear_color);
+      d2d_device_context->Clear(clear_color);
       float advance_x = 0;
       float advance_y = 0;
       for(int result_idx = 0; result_idx < ARRAYSIZE(text_to_glyphs_results); ++result_idx)
@@ -481,7 +494,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
         advance_y += max_advance_for_this_result;
         advance_x = 0;
       }
-      hr = d2d_render_target->EndDraw();
+      hr = d2d_device_context->EndDraw();
       ASSERT_HR(hr);
     }
 
@@ -502,9 +515,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
     }
   }
 
-  d2d_device_context->Release();
-  d2d_render_target->Release();
   foreground_brush->Release();
+  d2d_device_context->Release();
+  d2d_device->Release();
   d2d_factory->Release();
 
   return 0;
