@@ -400,17 +400,18 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
       {
         const MapTextToGlyphsResult &result = text_to_glyphs_results[result_idx];
         float max_advance_for_this_result = 0;
-        for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
+        for(TextToGlyphsSegmentNode *n = result.first_segment; n != 0; n = n->next)
         {
+          TextToGlyphsSegment &segment = n->v;
           DWRITE_GLYPH_RUN dwrite_glyph_run = {};
-          dwrite_glyph_run.glyphCount = segment->glyph_count;
-          dwrite_glyph_run.fontEmSize = segment->font_size_em;
-          dwrite_glyph_run.fontFace = segment->font_face;
-          dwrite_glyph_run.bidiLevel = segment->bidi_level;
+          dwrite_glyph_run.glyphCount = segment.glyph_count;
+          dwrite_glyph_run.fontEmSize = segment.font_size_em;
+          dwrite_glyph_run.fontFace = segment.font_face;
+          dwrite_glyph_run.bidiLevel = segment.bidi_level;
 
-          dwrite_glyph_run.glyphAdvances = segment->glyph_advances;
-          dwrite_glyph_run.glyphIndices = segment->glyph_indices;
-          dwrite_glyph_run.glyphOffsets = segment->glyph_offsets;
+          dwrite_glyph_run.glyphAdvances = segment.glyph_advances;
+          dwrite_glyph_run.glyphIndices = segment.glyph_indices;
+          dwrite_glyph_run.glyphOffsets = segment.glyph_offsets;
           D2D1_POINT_2F baseline = {};
           baseline.x = 500 + advance_x;
           baseline.y = 100 + advance_y;
@@ -492,13 +493,13 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
           // hampus: advance
 
           DWRITE_FONT_METRICS font_metrics = {};
-          segment->font_face->GetMetrics(&font_metrics);
-          float advance_y_for_this = (font_metrics.ascent + font_metrics.descent + font_metrics.lineGap) * segment->font_size_em / font_metrics.designUnitsPerEm;
+          segment.font_face->GetMetrics(&font_metrics);
+          float advance_y_for_this = (font_metrics.ascent + font_metrics.descent + font_metrics.lineGap) * segment.font_size_em / font_metrics.designUnitsPerEm;
           max_advance_for_this_result = max(max_advance_for_this_result, advance_y_for_this);
 
-          for(int glyph_idx = 0; glyph_idx < segment->glyph_count; ++glyph_idx)
+          for(int glyph_idx = 0; glyph_idx < segment.glyph_count; ++glyph_idx)
           {
-            advance_x += segment->glyph_advances[glyph_idx];
+            advance_x += segment.glyph_advances[glyph_idx];
           }
         }
         advance_y += max_advance_for_this_result;
