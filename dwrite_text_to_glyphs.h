@@ -43,9 +43,16 @@ struct TextToGlyphsSegment
   TextToGlyphsSegment *next;
   TextToGlyphsSegment *prev;
 
+  // options for all glyphs in this array
   IDWriteFontFace5 *font_face;
-  DWRITE_GLYPH_RUN dwrite_glyph_run;
-  GlyphArray glyph_array;
+  uint32_t bidi_level;
+  FLOAT font_size_em;
+  uint64_t glyph_count;
+
+  // the glyph data
+  uint16_t *glyph_indices;
+  float *glyph_advances;
+  DWRITE_GLYPH_OFFSET *glyph_offsets;
 };
 
 struct MapTextToGlyphsResult
@@ -332,6 +339,9 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       result.last_segment = segment;
     }
 
+    segment->font_face = fallback_font_face;
+    segment->font_size_em = font_size;
+
     //----------------------------------------------------------
     // hampus: get glyph array list with both simple and complex glyphs
 
@@ -521,11 +531,10 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
         total_glyph_count += chunk->glyph_count;
       }
 
-      GlyphArray &segment_glyph_array = segment->glyph_array;
-      segment_glyph_array.count = total_glyph_count;
-      segment_glyph_array.indices = (uint16_t *)calloc(segment_glyph_array.count, sizeof(uint16_t));
-      segment_glyph_array.advances = (float *)calloc(segment_glyph_array.count, sizeof(float));
-      segment_glyph_array.offsets = (DWRITE_GLYPH_OFFSET *)calloc(segment_glyph_array.count, sizeof(DWRITE_GLYPH_OFFSET));
+      segment->glyph_count = total_glyph_count;
+      segment->glyph_indices = (uint16_t *)calloc(segment->glyph_count, sizeof(uint16_t));
+      segment->glyph_advances = (float *)calloc(segment->glyph_count, sizeof(float));
+      segment->glyph_offsets = (DWRITE_GLYPH_OFFSET *)calloc(segment->glyph_count, sizeof(DWRITE_GLYPH_OFFSET));
       uint64_t glyph_idx_offset = 0;
       GlyphArrayChunk *next_chunk = 0;
       for(GlyphArrayChunk *chunk = first_glyph_array_chunk; chunk != 0; chunk = next_chunk)
@@ -534,15 +543,15 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
         for(uint64_t glyph_array_idx = 0; glyph_array_idx < chunk->glyph_array_count; ++glyph_array_idx)
         {
           GlyphArray &glyph_array = chunk->v[glyph_array_idx];
-          memory_copy_typed(segment_glyph_array.indices + glyph_idx_offset, glyph_array.indices, glyph_array.count);
-          memory_copy_typed(segment_glyph_array.advances + glyph_idx_offset, glyph_array.advances, glyph_array.count);
-          memory_copy_typed(segment_glyph_array.offsets + glyph_idx_offset, glyph_array.offsets, glyph_array.count);
+          memory_copy_typed(segment->glyph_indices + glyph_idx_offset, glyph_array.indices, glyph_array.count);
+          memory_copy_typed(segment->glyph_advances + glyph_idx_offset, glyph_array.advances, glyph_array.count);
+          memory_copy_typed(segment->glyph_offsets + glyph_idx_offset, glyph_array.offsets, glyph_array.count);
 
           // TODO(hampus): is it safe to set the bidi level of the entire segment to the
           // bidi level of the glyph array? We maybe need a new segment for each
           // differing level of bidi.
           // TODO(hampus): Should probably assert in case the bidi levels don't match.
-          segment_glyph_array.bidi_level = glyph_array.bidi_level;
+          segment->bidi_level = glyph_array.bidi_level;
 
           free(glyph_array.indices);
           free(glyph_array.advances);
@@ -553,14 +562,6 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
         free(chunk);
       }
     }
-
-    segment->dwrite_glyph_run.fontFace = segment->font_face = fallback_font_face;
-    segment->dwrite_glyph_run.fontEmSize = font_size;
-    segment->dwrite_glyph_run.glyphCount = segment->glyph_array.count;
-    segment->dwrite_glyph_run.glyphAdvances = segment->glyph_array.advances;
-    segment->dwrite_glyph_run.glyphIndices = segment->glyph_array.indices;
-    segment->dwrite_glyph_run.glyphOffsets = segment->glyph_array.offsets;
-    segment->dwrite_glyph_run.bidiLevel = segment->glyph_array.bidi_level;
 
     fallback_offset += fallback_text_length;
   }

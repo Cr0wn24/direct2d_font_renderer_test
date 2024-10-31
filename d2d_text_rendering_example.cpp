@@ -351,10 +351,11 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
       UINT dpi = GetDpiForWindow(hwnd);
 
+      bool use_cleartype = true;
       D2D1_BITMAP_PROPERTIES1 bitmapProperties = {};
       bitmapProperties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
       bitmapProperties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-      bitmapProperties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_IGNORE;
+      bitmapProperties.pixelFormat.alphaMode = use_cleartype ? D2D1_ALPHA_MODE_IGNORE : D2D1_ALPHA_MODE_PREMULTIPLIED;
       bitmapProperties.dpiY = dpi;
       bitmapProperties.dpiX = dpi;
 
@@ -401,12 +402,21 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
         float max_advance_for_this_result = 0;
         for(TextToGlyphsSegment *segment = result.first_segment; segment != 0; segment = segment->next)
         {
+          DWRITE_GLYPH_RUN dwrite_glyph_run = {};
+          dwrite_glyph_run.glyphCount = segment->glyph_count;
+          dwrite_glyph_run.fontEmSize = segment->font_size_em;
+          dwrite_glyph_run.fontFace = segment->font_face;
+          dwrite_glyph_run.bidiLevel = segment->bidi_level;
+
+          dwrite_glyph_run.glyphAdvances = segment->glyph_advances;
+          dwrite_glyph_run.glyphIndices = segment->glyph_indices;
+          dwrite_glyph_run.glyphOffsets = segment->glyph_offsets;
           D2D1_POINT_2F baseline = {};
           baseline.x = 500 + advance_x;
           baseline.y = 100 + advance_y;
 
           D2D1_RECT_F glyph_world_bounds = {};
-          d2d_device_context->GetGlyphRunWorldBounds(baseline, &segment->dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &glyph_world_bounds);
+          d2d_device_context->GetGlyphRunWorldBounds(baseline, &dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &glyph_world_bounds);
           bool is_whitespace = !(glyph_world_bounds.right > glyph_world_bounds.left && glyph_world_bounds.bottom > glyph_world_bounds.top);
 
           IDWriteColorGlyphRunEnumerator1 *run_enumerator = 0;
@@ -418,13 +428,13 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_JPEG |
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_TIFF |
                                                                          DWRITE_GLYPH_IMAGE_FORMATS_PREMULTIPLIED_B8G8R8A8;
-          hr = dwrite_factory->TranslateColorGlyphRun(baseline, &segment->dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
+          hr = dwrite_factory->TranslateColorGlyphRun(baseline, &dwrite_glyph_run, 0, desired_glyph_image_formats, DWRITE_MEASURING_MODE_NATURAL, 0, 0, &run_enumerator);
           if(hr == DWRITE_E_NOCOLOR)
           {
             // NOTE(hampus): There was no colored glyph. We can draw them as normal
 
             foreground_brush->SetColor({1, 1, 1, 1});
-            d2d_device_context->DrawGlyphRun(baseline, &segment->dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
+            d2d_device_context->DrawGlyphRun(baseline, &dwrite_glyph_run, foreground_brush, DWRITE_MEASURING_MODE_NATURAL);
           }
           else
           {
@@ -483,12 +493,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
           DWRITE_FONT_METRICS font_metrics = {};
           segment->font_face->GetMetrics(&font_metrics);
-          float advance_y_for_this = (font_metrics.ascent + font_metrics.descent + font_metrics.lineGap) * segment->dwrite_glyph_run.fontEmSize / font_metrics.designUnitsPerEm;
+          float advance_y_for_this = (font_metrics.ascent + font_metrics.descent + font_metrics.lineGap) * segment->font_size_em / font_metrics.designUnitsPerEm;
           max_advance_for_this_result = max(max_advance_for_this_result, advance_y_for_this);
 
-          for(int glyph_idx = 0; glyph_idx < segment->glyph_array.count; ++glyph_idx)
+          for(int glyph_idx = 0; glyph_idx < segment->glyph_count; ++glyph_idx)
           {
-            advance_x += segment->glyph_array.advances[glyph_idx];
+            advance_x += segment->glyph_advances[glyph_idx];
           }
         }
         advance_y += max_advance_for_this_result;
