@@ -21,8 +21,6 @@ struct GlyphArray
 {
   GlyphArrayChunk *chunk;
 
-  uint32_t bidi_level;
-
   uint64_t count;
   uint16_t *indices;
   float *advances;
@@ -278,6 +276,58 @@ allocate_and_push_back_glyph_array(GlyphArrayChunk **first_chunk, GlyphArrayChun
   return glyph_array;
 }
 
+static TextToGlyphsSegmentNode *
+allocate_and_push_back_segment_node(TextToGlyphsSegmentNode **first_segment, TextToGlyphsSegmentNode **last_segment)
+{
+  TextToGlyphsSegmentNode *segment_node = (TextToGlyphsSegmentNode *)calloc(1, sizeof(TextToGlyphsSegmentNode));
+  if(*first_segment == 0)
+  {
+    *first_segment = *last_segment = segment_node;
+  }
+  else
+  {
+    (*last_segment)->next = segment_node;
+    segment_node->prev = *last_segment;
+    *last_segment = segment_node;
+  }
+  return segment_node;
+}
+
+static void
+fill_segment_with_glyph_array_chunks(TextToGlyphsSegment *segment, GlyphArrayChunk *first_chunk, GlyphArrayChunk *last_chunk)
+{
+  uint64_t total_glyph_count = 0;
+  for(GlyphArrayChunk *chunk = first_chunk; chunk != 0; chunk = chunk->next)
+  {
+    total_glyph_count += chunk->total_glyph_count;
+  }
+
+  segment->glyph_count = total_glyph_count;
+  segment->glyph_indices = (uint16_t *)calloc(segment->glyph_count, sizeof(uint16_t));
+  segment->glyph_advances = (float *)calloc(segment->glyph_count, sizeof(float));
+  segment->glyph_offsets = (DWRITE_GLYPH_OFFSET *)calloc(segment->glyph_count, sizeof(DWRITE_GLYPH_OFFSET));
+  uint64_t glyph_idx_offset = 0;
+  GlyphArrayChunk *next_chunk = 0;
+  for(GlyphArrayChunk *chunk = first_chunk; chunk != 0; chunk = next_chunk)
+  {
+    next_chunk = chunk->next;
+    for(uint64_t glyph_array_idx = 0; glyph_array_idx < chunk->count; ++glyph_array_idx)
+    {
+      GlyphArray &glyph_array = chunk->v[glyph_array_idx];
+      memory_copy_typed(segment->glyph_indices + glyph_idx_offset, glyph_array.indices, glyph_array.count);
+      memory_copy_typed(segment->glyph_advances + glyph_idx_offset, glyph_array.advances, glyph_array.count);
+      memory_copy_typed(segment->glyph_offsets + glyph_idx_offset, glyph_array.offsets, glyph_array.count);
+
+      free(glyph_array.indices);
+      free(glyph_array.advances);
+      free(glyph_array.offsets);
+
+      glyph_idx_offset += glyph_array.count;
+    }
+    free(chunk);
+  }
+}
+
 static MapTextToGlyphsResult
 dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollection *font_collection, IDWriteTextAnalyzer1 *text_analyzer, const wchar_t *locale, const wchar_t *base_family, const float font_size, const wchar_t *text, const uint32_t text_length)
 {
@@ -329,26 +379,6 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     }
 
     //----------------------------------------------------------
-    // hampus: new fallback font => new segment
-
-    TextToGlyphsSegmentNode *segment_node = (TextToGlyphsSegmentNode *)calloc(1, sizeof(TextToGlyphsSegmentNode));
-    if(result.first_segment == 0)
-    {
-      result.first_segment = result.last_segment = segment_node;
-    }
-    else
-    {
-      result.last_segment->next = segment_node;
-      segment_node->prev = result.last_segment;
-      result.last_segment = segment_node;
-    }
-
-    TextToGlyphsSegment &segment = segment_node->v;
-
-    segment.font_face = mapped_font_face;
-    segment.font_size_em = font_size;
-
-    //----------------------------------------------------------
     // hampus: get glyph array list with both simple and complex glyphs
 
     // NOTE(hampus): Each simple and complex text will get their own GlyphArray.
@@ -359,7 +389,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     // TODO(hampus): Is chunking really necessary? Since this memory is just temporary and
     // if we know the upper limits, we could just preallocate GlyphArray and not having to deal with
     // chunks.
-
+    TextToGlyphsSegment *segment = 0;
     GlyphArrayChunk *first_glyph_array_chunk = 0;
     GlyphArrayChunk *last_glyph_array_chunk = 0;
 
@@ -386,6 +416,25 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       {
         // NOTE(hampus): This text was simple. This means we can just use
         // the indices directly without having to do any more shaping work.
+
+        if(segment != 0)
+        {
+          if(segment->bidi_level != 0)
+          {
+            fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
+            first_glyph_array_chunk = 0;
+            last_glyph_array_chunk = 0;
+            segment = 0;
+          }
+        }
+
+        if(segment == 0)
+        {
+          TextToGlyphsSegmentNode *segment_node = allocate_and_push_back_segment_node(&result.first_segment, &result.last_segment);
+          segment = &segment_node->v;
+          segment->font_face = mapped_font_face;
+          segment->font_size_em = font_size;
+        }
 
         // hampus: get a new glyph array
 
@@ -421,6 +470,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       }
       else
       {
+
         // NOTE(hampus): This text was not simple. We have to do extra work. :(
 
         TextAnalysisSource analysis_source{locale, fallback_ptr, complex_mapped_length};
@@ -442,14 +492,33 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
           for(uint64_t text_analysis_sink_result_idx = 0; text_analysis_sink_result_idx < chunk->count; ++text_analysis_sink_result_idx)
           {
             TextAnalysisSinkResult &analysis_result = chunk->v[text_analysis_sink_result_idx];
+
+            if(segment != 0)
+            {
+              if(segment->bidi_level != analysis_result.resolved_bidi_level)
+              {
+                fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
+                first_glyph_array_chunk = 0;
+                last_glyph_array_chunk = 0;
+                segment = 0;
+              }
+            }
+
+            if(segment == 0)
+            {
+              TextToGlyphsSegmentNode *segment_node = allocate_and_push_back_segment_node(&result.first_segment, &result.last_segment);
+              segment = &segment_node->v;
+              segment->font_face = mapped_font_face;
+              segment->font_size_em = font_size;
+              segment->bidi_level = analysis_result.resolved_bidi_level;
+            }
+
             uint16_t *cluster_map = (uint16_t *)calloc(analysis_result.text_length, sizeof(uint16_t));
             DWRITE_SHAPING_TEXT_PROPERTIES *text_props = (DWRITE_SHAPING_TEXT_PROPERTIES *)calloc(analysis_result.text_length, sizeof(DWRITE_SHAPING_TEXT_PROPERTIES));
 
             uint32_t actual_glyph_count = 0;
 
             GlyphArray *glyph_array = allocate_and_push_back_glyph_array(&first_glyph_array_chunk, &last_glyph_array_chunk);
-
-            glyph_array->bidi_level = analysis_result.resolved_bidi_level;
 
             glyph_array->indices = (uint16_t *)calloc(max_glyph_indices_count, sizeof(uint16_t));
             BOOL is_right_to_left = (BOOL)(analysis_result.resolved_bidi_level & 1);
@@ -531,42 +600,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     // hampus: convert our list of glyph arrays into one big array
 
     {
-      uint64_t total_glyph_count = 0;
-      for(GlyphArrayChunk *chunk = first_glyph_array_chunk; chunk != 0; chunk = chunk->next)
-      {
-        total_glyph_count += chunk->total_glyph_count;
-      }
-
-      segment.glyph_count = total_glyph_count;
-      segment.glyph_indices = (uint16_t *)calloc(segment.glyph_count, sizeof(uint16_t));
-      segment.glyph_advances = (float *)calloc(segment.glyph_count, sizeof(float));
-      segment.glyph_offsets = (DWRITE_GLYPH_OFFSET *)calloc(segment.glyph_count, sizeof(DWRITE_GLYPH_OFFSET));
-      uint64_t glyph_idx_offset = 0;
-      GlyphArrayChunk *next_chunk = 0;
-      for(GlyphArrayChunk *chunk = first_glyph_array_chunk; chunk != 0; chunk = next_chunk)
-      {
-        next_chunk = chunk->next;
-        for(uint64_t glyph_array_idx = 0; glyph_array_idx < chunk->count; ++glyph_array_idx)
-        {
-          GlyphArray &glyph_array = chunk->v[glyph_array_idx];
-          memory_copy_typed(segment.glyph_indices + glyph_idx_offset, glyph_array.indices, glyph_array.count);
-          memory_copy_typed(segment.glyph_advances + glyph_idx_offset, glyph_array.advances, glyph_array.count);
-          memory_copy_typed(segment.glyph_offsets + glyph_idx_offset, glyph_array.offsets, glyph_array.count);
-
-          // TODO(hampus): is it safe to set the bidi level of the entire segment to the
-          // bidi level of the glyph array? We maybe need a new segment for each
-          // differing level of bidi.
-          // TODO(hampus): Should probably assert in case the bidi levels don't match.
-          segment.bidi_level = glyph_array.bidi_level;
-
-          free(glyph_array.indices);
-          free(glyph_array.advances);
-          free(glyph_array.offsets);
-
-          glyph_idx_offset += glyph_array.count;
-        }
-        free(chunk);
-      }
+      fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
     }
 
     fallback_offset += mapped_text_length;
