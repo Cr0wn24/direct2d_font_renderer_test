@@ -19,8 +19,6 @@ struct GlyphArrayChunk;
 
 struct GlyphArray
 {
-  GlyphArrayChunk *chunk;
-
   uint64_t count;
   uint16_t *indices;
   float *advances;
@@ -272,7 +270,6 @@ allocate_and_push_back_glyph_array(GlyphArrayChunk **first_chunk, GlyphArrayChun
     glyph_array = &glyph_array_chunk->v[glyph_array_chunk->count];
     glyph_array_chunk->count += 1;
   }
-  glyph_array->chunk = glyph_array_chunk;
   return glyph_array;
 }
 
@@ -466,7 +463,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
           free(design_advances);
         }
 
-        glyph_array->chunk->total_glyph_count += glyph_array->count;
+        last_glyph_array_chunk->total_glyph_count += glyph_array->count;
       }
       else
       {
@@ -584,7 +581,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
             free(text_props);
             free(cluster_map);
 
-            glyph_array->chunk->total_glyph_count += glyph_array->count;
+            last_glyph_array_chunk->total_glyph_count += glyph_array->count;
           }
         }
 
