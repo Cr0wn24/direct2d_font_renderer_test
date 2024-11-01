@@ -247,12 +247,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   //----------------------------------------------------------
   // hampus: map text to glyphs
 
-  const wchar_t *ligatures_text = L"!=>=-><-=><=";
-  const wchar_t *emojis_text = L"😣😆😠";
+  const wchar_t *ligatures_text = L"Ligatures: !=>=-><-=><=";
+  const wchar_t *emojis_text = L"Emojis:😣😆😠";
   const wchar_t *text = L"Hello world";
-  const wchar_t *arabic_text = L"مرحبا بالعالم";
+  const wchar_t *arabic_text = L"Arabic text: مرحبا بالعالم";
 
-  const wchar_t *font = L"Fira Code";
+  const wchar_t *font = L"Segoe UI";
 
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {
@@ -412,9 +412,22 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
           dwrite_glyph_run.glyphAdvances = segment.glyph_advances;
           dwrite_glyph_run.glyphIndices = segment.glyph_indices;
           dwrite_glyph_run.glyphOffsets = segment.glyph_offsets;
+
+          // NOTE(hampus): The segment is right to left. We will advance
+          // beforehand so the lower-left corner of the text is the baseline.
+          // Otherwise the lower-right corner of the text would be the baseline
+          // which would render into our left to right text before it if we had any.
+          if(segment.bidi_level != 0)
+          {
+            for(int glyph_idx = 0; glyph_idx < segment.glyph_count; ++glyph_idx)
+            {
+              advance_x += segment.glyph_advances[glyph_idx];
+            }
+          }
+
           D2D1_POINT_2F baseline = {};
-          baseline.x = 500 + advance_x;
-          baseline.y = 100 + advance_y;
+          baseline.x = 50 + advance_x;
+          baseline.y = 50 + advance_y;
 
           D2D1_RECT_F glyph_world_bounds = {};
           d2d_device_context->GetGlyphRunWorldBounds(baseline, &dwrite_glyph_run, DWRITE_MEASURING_MODE_NATURAL, &glyph_world_bounds);
@@ -497,9 +510,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
           float advance_y_for_this = (font_metrics.ascent + font_metrics.descent + font_metrics.lineGap) * segment.font_size_em / font_metrics.designUnitsPerEm;
           max_advance_for_this_result = max(max_advance_for_this_result, advance_y_for_this);
 
-          for(int glyph_idx = 0; glyph_idx < segment.glyph_count; ++glyph_idx)
+          if(segment.bidi_level == 0)
           {
-            advance_x += segment.glyph_advances[glyph_idx];
+            for(int glyph_idx = 0; glyph_idx < segment.glyph_count; ++glyph_idx)
+            {
+              advance_x += segment.glyph_advances[glyph_idx];
+            }
           }
         }
         advance_y += max_advance_for_this_result;
