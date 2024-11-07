@@ -332,6 +332,10 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
   HRESULT hr = 0;
 
+  TextToGlyphsSegment *segment = 0;
+  GlyphArrayChunk *first_glyph_array_chunk = 0;
+  GlyphArrayChunk *last_glyph_array_chunk = 0;
+
   for(uint32_t fallback_offset = 0; fallback_offset < text_length;)
   {
     //----------------------------------------------------------
@@ -387,9 +391,6 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     // TODO(hampus): Is chunking really necessary? Since this memory is just temporary and
     // if we know the upper limits, we could just preallocate GlyphArray and not having to deal with
     // chunks.
-    TextToGlyphsSegment *segment = 0;
-    GlyphArrayChunk *first_glyph_array_chunk = 0;
-    GlyphArrayChunk *last_glyph_array_chunk = 0;
 
     const wchar_t *fallback_ptr = text + fallback_offset;
     const wchar_t *fallback_opl = fallback_ptr + mapped_text_length;
@@ -417,7 +418,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
         if(segment != 0)
         {
-          if(segment->bidi_level != 0)
+          if(segment->bidi_level != 0 || segment->font_face != mapped_font_face)
           {
             fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
             first_glyph_array_chunk = 0;
@@ -493,7 +494,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
 
             if(segment != 0)
             {
-              if(segment->bidi_level != analysis_result.resolved_bidi_level)
+              if(segment->bidi_level != analysis_result.resolved_bidi_level || segment->font_face != mapped_font_face)
               {
                 fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
                 first_glyph_array_chunk = 0;
@@ -597,11 +598,15 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     //----------------------------------------------------------
     // hampus: convert our list of glyph arrays into one big array
 
-    {
-      fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
-    }
-
     fallback_offset += mapped_text_length;
+  }
+
+  if(segment != 0)
+  {
+    fill_segment_with_glyph_array_chunks(segment, first_glyph_array_chunk, last_glyph_array_chunk);
+    first_glyph_array_chunk = 0;
+    last_glyph_array_chunk = 0;
+    segment = 0;
   }
 
   return result;

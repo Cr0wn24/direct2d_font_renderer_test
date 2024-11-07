@@ -256,11 +256,40 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {
-    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
+    //  dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
     dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, emojis_text, wcslen(emojis_text)),
-    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
-    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
+    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
+    //     dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
   };
+
+  wchar_t filePaths[8][MAX_PATH] = {};
+  int filePathsCount = 0;
+
+  for(TextToGlyphsSegmentNode *n = text_to_glyphs_results[0].first_segment; n != 0; n = n->next)
+  {
+    UINT32 numberOfFiles;
+    n->v.font_face->GetFiles(&numberOfFiles, nullptr);
+    IDWriteFontFile *fontFiles[8] = {};
+    n->v.font_face->GetFiles(&numberOfFiles, &fontFiles[0]);
+
+    IDWriteFontFileLoader *loader = nullptr;
+    fontFiles[0]->GetLoader(&loader);
+
+    void const *fontFileReferenceKey;
+    UINT32 fontFileReferenceKeySize;
+    fontFiles[0]->GetReferenceKey(&fontFileReferenceKey, &fontFileReferenceKeySize);
+
+    IDWriteLocalFontFileLoader *localLoader = nullptr;
+    loader->QueryInterface(&localLoader);
+    if(localLoader)
+    {
+      UINT32 filePathLength;
+      localLoader->GetFilePathLengthFromKey(fontFileReferenceKey, fontFileReferenceKeySize, &filePathLength);
+      filePathLength++;
+      localLoader->GetFilePathFromKey(fontFileReferenceKey, fontFileReferenceKeySize, &filePaths[filePathsCount][0], filePathLength);
+      filePathsCount++;
+    }
+  }
 
   ShowWindow(hwnd, SW_SHOWDEFAULT);
 
@@ -413,12 +442,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
           dwrite_glyph_run.glyphIndices = segment.glyph_indices;
           dwrite_glyph_run.glyphOffsets = segment.glyph_offsets;
 
-          // NOTE(hampus): The segment is right to left. We will advance
-          // beforehand so the lower-left corner of the text is the baseline.
-          // Otherwise the lower-right corner of the text would be the baseline
-          // which would render into our left to right text before it if we had any.
           if(segment.bidi_level != 0)
           {
+            // NOTE(hampus): The segment is right to left. We will advance
+            // beforehand so the lower-left corner of the text is the baseline.
+            // Otherwise the lower-right corner of the text would be the baseline
+            // which would render into our left to right text before it if we had any.
             for(int glyph_idx = 0; glyph_idx < segment.glyph_count; ++glyph_idx)
             {
               advance_x += segment.glyph_advances[glyph_idx];
