@@ -248,7 +248,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   // hampus: map text to glyphs
 
   const wchar_t *ligatures_text = L"Ligatures: !=>=-><-=><=";
-  const wchar_t *emojis_text = L"Emojis:😣😆😠";
+  const wchar_t *emojis_text = L"🤷‍♂️";
   const wchar_t *text = L"Hello world";
   const wchar_t *arabic_text = L"Arabic text: مرحبا بالعالم";
 
