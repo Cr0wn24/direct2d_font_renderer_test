@@ -248,7 +248,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   // hampus: map text to glyphs
 
   const wchar_t *ligatures_text = L"Ligatures: !=>=-><-=><=";
-  const wchar_t *emojis_text = L"🤷‍♂️";
+  const wchar_t *emojis_text = L"emojis: 🤷‍♂️";
   const wchar_t *text = L"Hello world";
   const wchar_t *arabic_text = L"Arabic text: مرحبا بالعالم";
 
@@ -256,10 +256,10 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
 
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {
-    //  dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, ligatures_text, wcslen(ligatures_text)),
     dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, emojis_text, wcslen(emojis_text)),
-    // dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
-    //     dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, text, wcslen(text)),
+    dwrite_map_text_to_glyphs(font_fallback1, font_collection, text_analyzer1, &locale[0], font, 50.0f, arabic_text, wcslen(arabic_text)),
   };
 
   wchar_t filePaths[8][MAX_PATH] = {};
