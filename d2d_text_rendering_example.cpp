@@ -252,7 +252,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR command_line, int show
   // const wchar_t *text = L"Hello world";
   // const wchar_t *arabic_text = L"Arabic text: مرحبا بالعالم";
 
-  const wchar_t *font = L"Consolas";
+  const wchar_t *font = L"Fira Code";
 
   MapTextToGlyphsResult text_to_glyphs_results[] =
   {

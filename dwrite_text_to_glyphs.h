@@ -356,13 +356,13 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
     uint32_t mapped_text_length = 0;
     {
       // NOTE(hampus): We need an analysis source that holds the text and the locale
-      TextAnalysisSource analysis_source{locale, text, text_length};
+      TextAnalysisSource analysis_source{locale, text+fallback_offset, text_length-fallback_offset};
 
       // NOTE(hampus): This get the appropiate font required for rendering the text
       float scale = 0;
       hr = font_fallback->MapCharacters(&analysis_source,
                                         fallback_offset,
-                                        text_length,
+                                        text_length-fallback_offset,
                                         font_collection,
                                         base_family,
                                         0,
