@@ -361,7 +361,7 @@ dwrite_map_text_to_glyphs(IDWriteFontFallback1 *font_fallback, IDWriteFontCollec
       // NOTE(hampus): This get the appropiate font required for rendering the text
       float scale = 0;
       hr = font_fallback->MapCharacters(&analysis_source,
-                                        fallback_offset,
+                                        0,
                                         text_length-fallback_offset,
                                         font_collection,
                                         base_family,
